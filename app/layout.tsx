@@ -15,7 +15,6 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Jk大房子（房产评估与租务风控系统）",
   description: "Barcelona Real Estate Intelligence & Risk Engine",
-  // 配置浏览器标签页 Icon
   icons: {
     icon: "/avatar.png",
     shortcut: "/avatar.png",
@@ -34,16 +33,18 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased light`}
       style={{ colorScheme: "light" }}
     >
+      <head>
+        {/* 显式注入 link 标签，绕过部分浏览器对 Favicon 的强缓存 */}
+        <link rel="icon" href="/avatar.png" type="image/png" />
+      </head>
       <body className="min-h-full flex flex-col font-sans relative bg-slate-900 text-slate-900">
-        {/* 背景图 + 高级半透明遮罩层 */}
+        {/* 自定义桌面背景图 + 60% 透明度渐变蒙版 */}
         <div 
           className="fixed inset-0 -z-10 bg-cover bg-center bg-no-repeat transition-all"
           style={{
-            // 使用 public 目录下的 back.png
             backgroundImage: `url('/back.png')`,
           }}
         >
-          {/* 渐变滤镜：确保前景文字和白色卡片清晰、高可读 */}
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-[2px]"></div>
         </div>
 
