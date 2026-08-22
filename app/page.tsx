@@ -16,7 +16,9 @@ const DISTRICT_BARRIOS: Record<string, string[]> = {
   "近郊热门区域 (Outer BCN)": ["L'Hospitalet de Llobregat", "Badalona", "Sant Cugat del Vallès", "Esplugues de Llobregat"]
 };
 
-// 定义后端返回的数据结构
+// 后端域名地址
+const API_BASE_URL = "https://bcn-housing-backend.onrender.com";
+
 interface ValuationData {
   valuation_summary?: {
     rating?: string;
@@ -38,18 +40,15 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'eval' | 'risk'>('eval');
   const [loading, setLoading] = useState(false);
   
-  // 房产评估结果
   const [evalResult, setEvalResult] = useState<ValuationData | null>(null);
-  // 风控审查结果
   const [riskResult, setRiskResult] = useState<any | null>(null);
 
-  // 表单状态
   const [formData, setFormData] = useState({
     intent: "rent",
     rental_type: "entire",
     barrio: "Eixample (扩展区)",
     sub_barrio: "Eixample Esquerra (左扩展)",
-    address: "",
+    address: "", // 具体地址
     price: 1300,
     area_sqm: 75,
     bedrooms: 2,
@@ -58,10 +57,11 @@ export default function Home() {
     condition: "renovated",
     has_elevator: true,
     has_balcony: true,
+    user_description: "", // 房产自由描述表达
     contract_type: "LAU_LONG_TERM",
     deposit_amount: 2600,
     agency_fee_charged: false,
-    contract_text: ""
+    contract_text: "" // 法律风控备注文本
   });
 
   const handleDistrictChange = (d: string) => {
@@ -69,27 +69,31 @@ export default function Home() {
     setFormData({ ...formData, barrio: d, sub_barrio: defaultSub });
   };
 
-  // 提交估值请求
   const handleEvalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setEvalResult(null);
 
+    const fullAddress = formData.address 
+      ? `${formData.sub_barrio}, ${formData.address}`
+      : `${formData.sub_barrio}`;
+
     const payload = {
       intent: formData.intent,
       rental_type: formData.rental_type,
-      barrio: formData.barrio.split(" ")[0], // 提取干净的街区名称
-      address: formData.address,
+      barrio: formData.barrio.split(" ")[0],
+      address: fullAddress,
       price: formData.price,
       area_sqm: formData.area_sqm,
       bedrooms: formData.bedrooms,
       floor_level: formData.floor_level,
       has_elevator: formData.has_elevator,
-      condition: formData.condition
+      condition: formData.condition,
+      description: formData.user_description
     };
 
     try {
-      const res = await fetch("https://bcn-housing-backend.onrender.com/api/evaluate-property", {
+      const res = await fetch(`${API_BASE_URL}/api/evaluate-property`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -101,13 +105,12 @@ export default function Home() {
         alert("评估失败: " + JSON.stringify(data));
       }
     } catch (err: any) {
-      alert("网络请求异常，请检查后端服务是否已在 8000 端口启动");
+      alert("网络请求异常，请检查后端服务连通性");
     } finally {
       setLoading(false);
     }
   };
 
-  // 提交风控请求
   const handleRiskSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -124,7 +127,7 @@ export default function Home() {
     };
 
     try {
-      const res = await fetch("https://bcn-housing-backend.onrender.com/api/check-rental-risk", {
+      const res = await fetch(`${API_BASE_URL}/api/check-rental-risk`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -146,13 +149,14 @@ export default function Home() {
     <main className="min-h-screen bg-slate-50 text-slate-800 p-4 md:p-8">
       <div className="max-w-5xl mx-auto bg-white rounded-2xl shadow-xl p-6 md:p-10 border border-slate-100">
         <header className="mb-8 border-b pb-4 text-center md:text-left">
-          <h1 className="text-3xl font-extrabold text-indigo-600">🏰 BCN Housing Intelligence v6.5 Pro</h1>
+          <h1 className="text-3xl font-extrabold text-indigo-600">🏰 BCN Housing Intelligence Pro</h1>
           <p className="text-slate-500 mt-1">巴塞罗那全域房产精算、租务法律风控与智能房源匹配系统</p>
         </header>
 
         {/* 双功能切换 Tab */}
         <div className="flex bg-slate-100 p-1.5 rounded-xl mb-8">
           <button
+            type="button"
             onClick={() => setActiveTab('eval')}
             className={`flex-1 py-3 font-bold rounded-lg text-sm transition-all ${
               activeTab === 'eval' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-slate-800'
@@ -161,6 +165,7 @@ export default function Home() {
             🏠 房产智能精算与估值
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('risk')}
             className={`flex-1 py-3 font-bold rounded-lg text-sm transition-all ${
               activeTab === 'risk' ? 'bg-white text-rose-600 shadow-md' : 'text-slate-500 hover:text-slate-800'
@@ -224,6 +229,18 @@ export default function Home() {
             </div>
           </div>
 
+          {/* 补充具体地址输入框 */}
+          <div>
+            <label className="block text-sm font-semibold mb-2">具体地址 / 门牌号（选填，精确分析地段与周边）</label>
+            <input 
+              type="text" 
+              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500"
+              placeholder="例如: Carrer de Balmes 120, 3º 1ª"
+              value={formData.address}
+              onChange={e => setFormData({...formData, address: e.target.value})}
+            />
+          </div>
+
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-semibold mb-2">价格 (€/月 或 总价)</label>
@@ -266,6 +283,20 @@ export default function Home() {
               </select>
             </div>
           </div>
+
+          {/* 评估模式下的自由表达输入框 */}
+          {activeTab === 'eval' && (
+            <div>
+              <label className="block text-sm font-semibold mb-2">房源自由补充表达（选填，如采光、新旧程度、交通要求等）</label>
+              <textarea 
+                rows={3}
+                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500"
+                placeholder="例如：精装修带家具、靠近 L3 地铁站、带有 20 平方米南向大露台、带独立车库等..."
+                value={formData.user_description}
+                onChange={e => setFormData({...formData, user_description: e.target.value})}
+              />
+            </div>
+          )}
 
           {/* 风控专有选项 */}
           {activeTab === 'risk' && (
