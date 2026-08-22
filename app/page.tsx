@@ -145,9 +145,9 @@ export default function Home() {
         <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight sm:text-4xl">
           巴塞罗那房产智能评估与租务风控引擎
         </h1>
-        <p className="mt-2 text-slate-600 text-sm sm:text-base">
-          基于全域真实数据库与最新西班牙 housing law 法律模型的智能分析系统
-        </p>
+      <p className="text-slate-200 text-sm font-medium drop-shadow-md">
+  基于全域真实数据库与最新西班牙 housing law 法律模型的智能分析系统
+</p>
       </header>
 
       {/* 选项卡 */}
