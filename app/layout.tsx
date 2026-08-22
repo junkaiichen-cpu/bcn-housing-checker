@@ -16,8 +16,11 @@ export const metadata: Metadata = {
   title: "Jk大房子（房产评估与租务风控系统）",
   description: "Barcelona Real Estate Intelligence & Risk Engine",
   icons: {
-    icon: "/avatar.png?v=999",
-    apple: "/avatar.png?v=999",
+    icon: [
+      { url: "/avatar.png?v=2" },
+      { url: "/favicon.ico?v=2" },
+    ],
+    apple: "/avatar.png?v=2",
   },
 };
 
@@ -32,10 +35,6 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased light`}
       style={{ colorScheme: "light" }}
     >
-      <head>
-        <link rel="icon" href="/avatar.png?v=999" type="image/png" sizes="any" />
-        <link rel="apple-touch-icon" href="/avatar.png?v=999" />
-      </head>
       <body className="min-h-full flex flex-col font-sans relative bg-slate-950 text-slate-100">
         <div 
           className="fixed inset-0 -z-10 bg-cover bg-center bg-no-repeat transition-all"
