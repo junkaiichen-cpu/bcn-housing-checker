@@ -77,7 +77,7 @@ export default function Home() {
     setLoading(true);
     setResult(null);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/evaluate-property", {
+      const res = await fetch("https://bcn-housing-backend.onrender.com/api/evaluate-property", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(evalForm)
@@ -97,7 +97,7 @@ export default function Home() {
     setLoading(true);
     setResult(null);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/check-rental-risk", {
+      const res = await fetch("https://bcn-housing-backend.onrender.com/api/check-rental-risk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(riskForm)
