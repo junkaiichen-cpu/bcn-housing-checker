@@ -142,10 +142,13 @@ export default function Home() {
     <main className="max-w-5xl mx-auto px-4 py-8 w-full text-slate-900">
       {/* 头部标题 */}
       <header className="mb-8 text-center">
-        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight sm:text-4xl">
-          巴塞罗那房产智能评估与租务风控引擎
-        </h1>
-      <p className="text-slate-200 text-sm font-medium drop-shadow-md">
+       {/* 主标题 */}
+<h1 className="text-3xl md:text-4xl font-extrabold text-white drop-shadow-md tracking-tight">
+  巴塞罗那房产智能评估与租务风控引擎
+</h1>
+
+{/* 副标题 */}
+<p className="text-slate-200 text-sm md:text-base font-medium drop-shadow-md mt-2">
   基于全域真实数据库与最新西班牙 housing law 法律模型的智能分析系统
 </p>
       </header>
