@@ -32,7 +32,7 @@ export default function Home() {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState("");
 
-  const API_BASE = "http://127.0.0.1:8000";
+  const API_BASE = "https://YOUR-RENDER-BACKEND.onrender.com";
 
   // 获取巴塞罗那省 12 县与市镇数据
   useEffect(() => {
