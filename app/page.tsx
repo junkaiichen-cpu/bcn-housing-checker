@@ -16,53 +16,127 @@ const DISTRICT_BARRIOS: Record<string, string[]> = {
   "近郊热门区域 (Outer BCN)": ["L'Hospitalet de Llobregat", "Badalona", "Sant Cugat del Vallès", "Esplugues de Llobregat"]
 };
 
-export default function Home() {
-  const [loading, setLoading] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState("");
+// 定义后端返回的数据结构
+interface ValuationData {
+  valuation_summary?: {
+    rating?: string;
+    adjusted_fair_value?: string;
+    variance_percentage?: string;
+    value_verdict?: string;
+  };
+  location_and_address_analysis?: string;
+  district_profile?: {
+    livability_score?: string;
+    safety_score?: string;
+    key_pros?: string[];
+    key_cons?: string[];
+  };
+  actionable_negotiation_strategy?: string;
+}
 
+export default function Home() {
+  const [activeTab, setActiveTab] = useState<'eval' | 'risk'>('eval');
+  const [loading, setLoading] = useState(false);
+  
+  // 房产评估结果
+  const [evalResult, setEvalResult] = useState<ValuationData | null>(null);
+  // 风控审查结果
+  const [riskResult, setRiskResult] = useState<any | null>(null);
+
+  // 表单状态
   const [formData, setFormData] = useState({
-    eval_type: "rent",
-    lease_mode: "complete",
-    district: "Eixample (扩展区)",
-    neighborhood: "Eixample Esquerra (左扩展)",
+    intent: "rent",
+    rental_type: "entire",
+    barrio: "Eixample (扩展区)",
+    sub_barrio: "Eixample Esquerra (左扩展)",
     address: "",
     price: 1300,
-    size: 75,
+    area_sqm: 75,
     bedrooms: 2,
     bathrooms: 1,
-    floor: "3楼 (3º Piso)",
-    condition: "Renovated (精装修)",
-    elevator: true,
-    balcony: true,
-    furnished: "带全套家具 (Furnished)",
-    energy_certificate: "D",
-    user_custom_requirements: ""
+    floor_level: "Middle",
+    condition: "renovated",
+    has_elevator: true,
+    has_balcony: true,
+    contract_type: "LAU_LONG_TERM",
+    deposit_amount: 2600,
+    agency_fee_charged: false,
+    contract_text: ""
   });
 
   const handleDistrictChange = (d: string) => {
-    const defaultNeighborhood = DISTRICT_BARRIOS[d]?.[0] || "";
-    setFormData({ ...formData, district: d, neighborhood: defaultNeighborhood });
+    const defaultSub = DISTRICT_BARRIOS[d]?.[0] || "";
+    setFormData({ ...formData, barrio: d, sub_barrio: defaultSub });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // 提交估值请求
+  const handleEvalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setAnalysisResult("");
+    setEvalResult(null);
+
+    const payload = {
+      intent: formData.intent,
+      rental_type: formData.rental_type,
+      barrio: formData.barrio.split(" ")[0], // 提取干净的街区名称
+      address: formData.address,
+      price: formData.price,
+      area_sqm: formData.area_sqm,
+      bedrooms: formData.bedrooms,
+      floor_level: formData.floor_level,
+      has_elevator: formData.has_elevator,
+      condition: formData.condition
+    };
 
     try {
-      const res = await fetch("https://bcn-housing-backend.onrender.com/api/evaluate", {
+      const res = await fetch("https://bcn-housing-backend.onrender.com/api/evaluate-property", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (data.status === "success") {
-        setAnalysisResult(data.analysis);
+        setEvalResult(data.data);
       } else {
-        alert("分析失败: " + JSON.stringify(data));
+        alert("评估失败: " + JSON.stringify(data));
       }
     } catch (err: any) {
-      alert("请求异常，请稍后重试: " + err.message);
+      alert("网络请求异常，请检查后端服务是否已在 8000 端口启动");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 提交风控请求
+  const handleRiskSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setRiskResult(null);
+
+    const payload = {
+      barrio: formData.barrio.split(" ")[0],
+      address: formData.address,
+      monthly_rent: formData.price,
+      deposit_amount: formData.deposit_amount,
+      contract_type: formData.contract_type,
+      agency_fee_charged_to_tenant: formData.agency_fee_charged,
+      contract_text: formData.contract_text
+    };
+
+    try {
+      const res = await fetch("https://bcn-housing-backend.onrender.com/api/check-rental-risk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.status === "success") {
+        setRiskResult(data.data);
+      } else {
+        alert("风控审查失败: " + JSON.stringify(data));
+      }
+    } catch (err: any) {
+      alert("网络请求异常，请检查后端服务");
     } finally {
       setLoading(false);
     }
@@ -71,47 +145,64 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-slate-50 text-slate-800 p-4 md:p-8">
       <div className="max-w-5xl mx-auto bg-white rounded-2xl shadow-xl p-6 md:p-10 border border-slate-100">
-        <header className="mb-8 border-b pb-4">
-          <h1 className="text-3xl font-extrabold text-indigo-600">BCN Housing Intelligence v6.5 Pro</h1>
+        <header className="mb-8 border-b pb-4 text-center md:text-left">
+          <h1 className="text-3xl font-extrabold text-indigo-600">🏰 BCN Housing Intelligence v6.5 Pro</h1>
           <p className="text-slate-500 mt-1">巴塞罗那全域房产精算、租务法律风控与智能房源匹配系统</p>
         </header>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* 模式与类型 */}
+        {/* 双功能切换 Tab */}
+        <div className="flex bg-slate-100 p-1.5 rounded-xl mb-8">
+          <button
+            onClick={() => setActiveTab('eval')}
+            className={`flex-1 py-3 font-bold rounded-lg text-sm transition-all ${
+              activeTab === 'eval' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            🏠 房产智能精算与估值
+          </button>
+          <button
+            onClick={() => setActiveTab('risk')}
+            className={`flex-1 py-3 font-bold rounded-lg text-sm transition-all ${
+              activeTab === 'risk' ? 'bg-white text-rose-600 shadow-md' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            ⚖️ 租务合规与霸王条款审查
+          </button>
+        </div>
+
+        {/* 表单区域 */}
+        <form onSubmit={activeTab === 'eval' ? handleEvalSubmit : handleRiskSubmit} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-semibold mb-2">评估类型</label>
+              <label className="block text-sm font-semibold mb-2">交易意图与模式</label>
               <select 
-                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500"
-                value={formData.eval_type}
-                onChange={e => setFormData({...formData, eval_type: e.target.value})}
+                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white"
+                value={formData.intent}
+                onChange={e => setFormData({...formData, intent: e.target.value})}
               >
-                <option value="rent">租房估值与风控 (Rent Evaluation)</option>
-                <option value="investment">买房/投资回报评估 (Investment Evaluation)</option>
+                <option value="rent">租房 (Alquiler)</option>
+                <option value="buy">买房/投资 (Compra)</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-semibold mb-2">租赁类型</label>
+              <label className="block text-sm font-semibold mb-2">租赁方式</label>
               <select 
-                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500"
-                value={formData.lease_mode}
-                onChange={e => setFormData({...formData, lease_mode: e.target.value})}
+                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white"
+                value={formData.rental_type}
+                onChange={e => setFormData({...formData, rental_type: e.target.value})}
               >
-                <option value="complete">常驻长租-整租 (LAU 5年/7年)</option>
-                <option value="temporal">中短期常驻 (Temporal 3-11个月)</option>
+                <option value="entire">整租 (Vivienda Completa - LAU 5年/7年)</option>
                 <option value="room">单间合租 (Habitación)</option>
-                <option value="coliving">品牌青年公寓/Co-living</option>
               </select>
             </div>
           </div>
 
-          {/* 行政区与具体 Barrio */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold mb-2">行政区 (Distrito)</label>
               <select 
-                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500"
-                value={formData.district}
+                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white"
+                value={formData.barrio}
                 onChange={e => handleDistrictChange(e.target.value)}
               >
                 {Object.keys(DISTRICT_BARRIOS).map(d => (
@@ -122,146 +213,215 @@ export default function Home() {
             <div>
               <label className="block text-sm font-semibold mb-2">具体街区 (Barrio)</label>
               <select 
-                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500"
-                value={formData.neighborhood}
-                onChange={e => setFormData({...formData, neighborhood: e.target.value})}
+                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white"
+                value={formData.sub_barrio}
+                onChange={e => setFormData({...formData, sub_barrio: e.target.value})}
               >
-                {DISTRICT_BARRIOS[formData.district]?.map(b => (
+                {DISTRICT_BARRIOS[formData.barrio]?.map(b => (
                   <option key={b} value={b}>{b}</option>
                 ))}
               </select>
             </div>
           </div>
 
-          {/* 价格与物理属性 */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-semibold mb-2">价格 (€/月 或 总价)</label>
               <input 
                 type="number" 
-                className="w-full p-3 border rounded-lg"
+                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500"
                 value={formData.price}
                 onChange={e => setFormData({...formData, price: Number(e.target.value)})}
+                required
               />
             </div>
             <div>
               <label className="block text-sm font-semibold mb-2">建筑面积 (㎡)</label>
               <input 
                 type="number" 
-                className="w-full p-3 border rounded-lg"
-                value={formData.size}
-                onChange={e => setFormData({...formData, size: Number(e.target.value)})}
+                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500"
+                value={formData.area_sqm}
+                onChange={e => setFormData({...formData, area_sqm: Number(e.target.value)})}
               />
             </div>
             <div>
               <label className="block text-sm font-semibold mb-2">卧室数量</label>
               <input 
                 type="number" 
-                className="w-full p-3 border rounded-lg"
+                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500"
                 value={formData.bedrooms}
                 onChange={e => setFormData({...formData, bedrooms: Number(e.target.value)})}
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold mb-2">卫浴数量</label>
-              <input 
-                type="number" 
-                className="w-full p-3 border rounded-lg"
-                value={formData.bathrooms}
-                onChange={e => setFormData({...formData, bathrooms: Number(e.target.value)})}
-              />
-            </div>
-          </div>
-
-          {/* 楼层、装修、家具 */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
               <label className="block text-sm font-semibold mb-2">所在楼层</label>
               <select 
-                className="w-full p-3 border rounded-lg"
-                value={formData.floor}
-                onChange={e => setFormData({...formData, floor: e.target.value})}
+                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white"
+                value={formData.floor_level}
+                onChange={e => setFormData({...formData, floor_level: e.target.value})}
               >
-                <option value="Planta Baja (底层/沿街)">Planta Baja (底层/沿街)</option>
-                <option value="Principal / Entresuelo (一楼/夹层)">Principal / Entresuelo (一楼/夹层)</option>
-                <option value="3-5楼 (Planta Media)">3-5楼 (Planta Media)</option>
-                <option value="Ático / Sobreático (顶层带露台)">Ático / Sobreático (顶层/顶层带露台)</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold mb-2">房屋状况</label>
-              <select 
-                className="w-full p-3 border rounded-lg"
-                value={formData.condition}
-                onChange={e => setFormData({...formData, condition: e.target.value})}
-              >
-                <option value="Good (良好可直接入住)">良好 (Good)</option>
-                <option value="Renovated (精装修)">精装修 (Renovated)</option>
-                <option value="Needs Renovation (需翻新)">需翻新 (Needs Renovation)</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold mb-2">家具配置</label>
-              <select 
-                className="w-full p-3 border rounded-lg"
-                value={formData.furnished}
-                onChange={e => setFormData({...formData, furnished: e.target.value})}
-              >
-                <option value="带全套家具 (Furnished)">带全套家具 (Furnished)</option>
-                <option value="不带家具 (Unfurnished)">不带家具 (Unfurnished)</option>
-                <option value="部分家具 (Semi-furnished)">部分家具 (Semi-furnished)</option>
+                <option value="Middle">中层 (Planta Media)</option>
+                <option value="Ático">顶楼带露台 (Ático)</option>
+                <option value="Bajo">底层/沿街 (Bajo)</option>
               </select>
             </div>
           </div>
 
-          {/* 选项复选框 */}
+          {/* 风控专有选项 */}
+          {activeTab === 'risk' && (
+            <div className="p-4 bg-rose-50 border border-rose-100 rounded-xl space-y-4">
+              <h3 className="font-bold text-rose-800 text-sm">⚖️ 租务合规与霸王条款专项审查</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold mb-2 text-slate-700">合同类型</label>
+                  <select 
+                    className="w-full p-3 border rounded-lg bg-white"
+                    value={formData.contract_type}
+                    onChange={e => setFormData({...formData, contract_type: e.target.value})}
+                  >
+                    <option value="LAU_LONG_TERM">LAU 长期居留合同 (5年/7年)</option>
+                    <option value="TEMPORADA">Temporada 季节性/短期合同</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-2 text-slate-700">实收押金 (€)</label>
+                  <input 
+                    type="number" 
+                    className="w-full p-3 border rounded-lg"
+                    value={formData.deposit_amount}
+                    onChange={e => setFormData({...formData, deposit_amount: Number(e.target.value)})}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <input 
+                  type="checkbox" 
+                  id="agency_fee"
+                  checked={formData.agency_fee_charged} 
+                  onChange={e => setFormData({...formData, agency_fee_charged: e.target.checked})}
+                  className="w-5 h-5 text-rose-600 rounded"
+                />
+                <label htmlFor="agency_fee" className="text-sm font-semibold text-rose-900 cursor-pointer">
+                  中介/房东向你（租客）收取了中介服务费 (Honorarios de Agencia)
+                </label>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold mb-2 text-slate-700">粘贴合同条款或对话记录（AI 审查霸王条款）</label>
+                <textarea 
+                  rows={3}
+                  className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-rose-500"
+                  placeholder="例如：合同规定退租时扣除 500 欧清洁费、或者要求提前 3 个月书面通知等..."
+                  value={formData.contract_text}
+                  onChange={e => setFormData({...formData, contract_text: e.target.value})}
+                />
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center space-x-6">
             <label className="flex items-center space-x-2 cursor-pointer">
               <input 
                 type="checkbox" 
-                checked={formData.elevator} 
-                onChange={e => setFormData({...formData, elevator: e.target.checked})}
+                checked={formData.has_elevator} 
+                onChange={e => setFormData({...formData, has_elevator: e.target.checked})}
                 className="w-5 h-5 text-indigo-600 rounded"
               />
               <span className="text-sm font-medium">配备电梯 (Ascensor)</span>
             </label>
-            <label className="flex items-center space-x-2 cursor-pointer">
-              <input 
-                type="checkbox" 
-                checked={formData.balcony} 
-                onChange={e => setFormData({...formData, balcony: e.target.checked})}
-                className="w-5 h-5 text-indigo-600 rounded"
-              />
-              <span className="text-sm font-medium">带阳台/露台 (Balcón/Terraza)</span>
-            </label>
-          </div>
-
-          {/* 自定义需求与房源查找输入 */}
-          <div>
-            <label className="block text-sm font-semibold mb-2">个性化需求与房源寻找偏好（用于AI推荐与深度风控）</label>
-            <textarea 
-              rows={3}
-              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500"
-              placeholder="例如：我是 UPF 的学生，希望租金控制在 1200€ 以内，通勤在 25 分钟以内，希望带采光好的阳台。或者粘贴具体的 Idealista 链接描述..."
-              value={formData.user_custom_requirements}
-              onChange={e => setFormData({...formData, user_custom_requirements: e.target.value})}
-            />
           </div>
 
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl shadow-lg transition duration-200"
+            className={`w-full font-bold py-4 rounded-xl shadow-lg transition duration-200 text-white ${
+              activeTab === 'eval' 
+                ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200' 
+                : 'bg-rose-600 hover:bg-rose-700 shadow-rose-200'
+            }`}
           >
-            {loading ? "正在调取巴塞罗那数据库与 AI 深度算力分析中..." : "生成深度精算报告与房源推荐"}
+            {loading ? "正在调取巴塞罗那数据库与 AI 深度算力分析中..." : (activeTab === 'eval' ? "生成深度精算评估报告" : "提交租务风险判定审查")}
           </button>
         </form>
 
-        {/* 结果显示区域 */}
-        {analysisResult && (
-          <div className="mt-10 p-6 bg-slate-900 text-slate-100 rounded-xl shadow-2xl overflow-auto leading-relaxed whitespace-pre-wrap">
-            <h2 className="text-xl font-bold text-green-400 mb-4 pb-2 border-b border-slate-700">分析与推荐报告</h2>
-            {analysisResult}
+        {/* 结果展示卡片：房产精算结果 */}
+        {evalResult && (
+          <div className="mt-10 space-y-6">
+            <h2 className="text-2xl font-black text-slate-800 border-b pb-2">📊 房产估值与溢价分析报告</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-5 bg-indigo-50 border border-indigo-100 rounded-xl">
+                <span className="text-xs text-indigo-600 font-bold uppercase tracking-wider">评级推荐</span>
+                <p className="text-xl font-black text-indigo-900 mt-1">{evalResult.valuation_summary?.rating}</p>
+              </div>
+              <div className="p-5 bg-emerald-50 border border-emerald-100 rounded-xl">
+                <span className="text-xs text-emerald-600 font-bold uppercase tracking-wider">公允估值</span>
+                <p className="text-xl font-black text-emerald-900 mt-1">{evalResult.valuation_summary?.adjusted_fair_value}</p>
+              </div>
+              <div className="p-5 bg-amber-50 border border-amber-100 rounded-xl">
+                <span className="text-xs text-amber-600 font-bold uppercase tracking-wider">价格偏差率</span>
+                <p className="text-xl font-black text-amber-900 mt-1">{evalResult.valuation_summary?.variance_percentage}</p>
+              </div>
+            </div>
+
+            <div className="p-5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+              <h3 className="font-bold text-slate-800">💡 评估综合诊断结论</h3>
+              <p className="text-slate-600 leading-relaxed">{evalResult.valuation_summary?.value_verdict}</p>
+            </div>
+
+            <div className="p-5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+              <h3 className="font-bold text-slate-800">📍 地段与交通宜居分析</h3>
+              <p className="text-slate-600 leading-relaxed">{evalResult.location_and_address_analysis}</p>
+            </div>
+
+            <div className="p-5 bg-indigo-900 text-white rounded-xl space-y-2 shadow-lg">
+              <h3 className="font-bold text-indigo-200">🤝 建议谈判与议价策略</h3>
+              <p className="text-indigo-100 leading-relaxed">{evalResult.actionable_negotiation_strategy}</p>
+            </div>
+          </div>
+        )}
+
+        {/* 结果展示卡片：租务风控诊断 */}
+        {riskResult && (
+          <div className="mt-10 space-y-6">
+            <h2 className="text-2xl font-black text-slate-800 border-b pb-2">⚖️ 租务合规诊断书</h2>
+
+            <div className={`p-5 rounded-xl border ${
+              riskResult.overall_risk_level === 'RED' ? 'bg-rose-50 border-rose-200 text-rose-900' : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+            }`}>
+              <div className="flex items-center justify-between">
+                <span className="font-bold">风险等级判定：{riskResult.overall_risk_level}</span>
+              </div>
+              <p className="mt-2 text-sm leading-relaxed">{riskResult.compliance_verdict}</p>
+            </div>
+
+            {riskResult.hard_legal_violations?.length > 0 && (
+              <div className="p-5 bg-rose-100 border border-rose-300 rounded-xl space-y-2">
+                <h3 className="font-bold text-rose-900">🚨 确诊违法/违规条款</h3>
+                <ul className="list-disc pl-5 space-y-1 text-rose-800 text-sm">
+                  {riskResult.hard_legal_violations.map((v: string, idx: number) => (
+                    <li key={idx}>{v}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="p-5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+              <h3 className="font-bold text-slate-800">📄 详细条款分析</h3>
+              <p className="text-slate-600 leading-relaxed text-sm">{riskResult.contract_text_analysis}</p>
+            </div>
+
+            {riskResult.actionable_rights_recovery_steps?.length > 0 && (
+              <div className="p-5 bg-slate-900 text-slate-100 rounded-xl space-y-2">
+                <h3 className="font-bold text-emerald-400">🛡️ 维权与退款行动指南</h3>
+                <ul className="list-decimal pl-5 space-y-2 text-sm text-slate-300">
+                  {riskResult.actionable_rights_recovery_steps.map((step: string, idx: number) => (
+                    <li key={idx}>{step}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         )}
       </div>
