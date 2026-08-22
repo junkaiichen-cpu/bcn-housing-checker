@@ -15,6 +15,12 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Jk大房子（房产评估与租务风控系统）",
   description: "Barcelona Real Estate Intelligence & Risk Engine",
+  // 配置浏览器标签页 Icon
+  icons: {
+    icon: "/avatar.png",
+    shortcut: "/avatar.png",
+    apple: "/avatar.png",
+  },
 };
 
 export default function RootLayout({
@@ -33,15 +39,15 @@ export default function RootLayout({
         <div 
           className="fixed inset-0 -z-10 bg-cover bg-center bg-no-repeat transition-all"
           style={{
-            // 使用高质量巴塞罗那经典八角街区俯瞰图
-            backgroundImage: `url('https://images.unsplash.com/photo-1583422409516-2895a771f6ce?q=80&w=2070&auto=format&fit=crop')`,
+            // 使用 public 目录下的 back.png
+            backgroundImage: `url('/back.png')`,
           }}
         >
-          {/* 渐变滤镜：确保页面文字与白色卡片清晰可见，同时保留高质感城市韵味 */}
-          <div className="absolute inset-0 bg-slate-900/65 backdrop-blur-[2px]"></div>
+          {/* 渐变滤镜：确保前景文字和白色卡片清晰、高可读 */}
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-[2px]"></div>
         </div>
 
-        {/* 页面主内容区域 */}
+        {/* 页面主内容 */}
         <main className="relative z-10 flex-1 flex flex-col">
           {children}
         </main>
