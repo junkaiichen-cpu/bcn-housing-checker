@@ -1,48 +1,71 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowRight,
+  BarChart3,
+  Building2,
+  Check,
+  ChevronDown,
+  CircleHelp,
+  FileCheck2,
+  Home as HomeIcon,  
+  Info,
+  Landmark,
+  Loader2,
+  MapPin,
+  Minus,
+  RefreshCw,
+  Scale,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Target,
+  TrendingUp,
+  Users,
+  WalletCards,
+  XCircle,
+} from "lucide-react";
 import { BACKEND_URL, fetchFromBackend } from "@/lib/api";
 
-// 静态兜底 12 县数据（前端在后端无响应时自动使用）
-const FALLBACK_TREE: Record<string, any> = {
+type TabKey = "evaluate" | "compare" | "legal" | "concierge" | "marketplace";
+type Intent = "rent" | "buy";
+type RentalType = "entire" | "room";
+type Condition = "good" | "renovated" | "needs_renovation";
+type FloorLevel = "Middle" | "Ático" | "Bajo";
+
+interface MunicipalityNode {
+  barrios: string[];
+  zone_tensionada?: boolean;
+  avg_rent_sqm?: number;
+  avg_sale_sqm?: number;
+}
+
+interface GeoNode {
+  description?: string;
+  municipios: Record<string, MunicipalityNode>;
+}
+
+type GeoTree = Record<string, GeoNode>;
+
+const FALLBACK_TREE: GeoTree = {
   Barcelonès: {
-    description: "巴塞罗那省核心都市圈，人口密度最高、基础设施与公共交通最完善的经济政治中心。",
+    description: "巴塞罗那核心都市圈。",
     municipios: {
       Barcelona: {
-        barrios: [
-          "Eixample",
-          "Gràcia",
-          "Sarrià-Sant Gervasi",
-          "Les Corts / Pedralbes",
-          "Poblenou / Sant Martí",
-          "Ciutat Vella / Gòtic",
-          "Sants-Montjuïc",
-          "Sant Andreu",
-          "Horta-Guinardó",
-          "Nou Barris",
-        ],
-        zone_tensionada: true,
-      },
-      "L'Hospitalet de Llobregat": {
-        barrios: ["Bellvitge", "Santa Eulàlia / Granvia", "Collblanc / La Torrassa"],
+        barrios: ["Eixample", "Gràcia", "Sarrià-Sant Gervasi", "Poblenou / Sant Martí", "Ciutat Vella / Gòtic"],
         zone_tensionada: true,
       },
       Badalona: {
         barrios: ["Centre / Dalt de la Vila", "Gorg / Port", "La Salut / Llefià"],
         zone_tensionada: true,
       },
-      "Santa Coloma de Gramenet": {
-        barrios: ["Centre", "Fondo"],
-        zone_tensionada: true,
-      },
-      "Sant Adrià de Besòs": {
-        barrios: ["La Catalana", "Besòs Mar"],
-        zone_tensionada: true,
-      },
     },
   },
   "Vallès Occidental": {
-    description: "高科技产业、大学城与高端宜居郊区集中地，FGC 铁路线直通市中心。",
+    description: "科技、大学与近郊居住板块。",
     municipios: {
       "Sant Cugat del Vallès": {
         barrios: ["Volpelleres", "Mirasol", "Centre Station"],
@@ -52,1074 +75,812 @@ const FALLBACK_TREE: Record<string, any> = {
         barrios: ["Centre", "Creu Alta"],
         zone_tensionada: true,
       },
-      Terrassa: {
-        barrios: ["Centre", "Vallparadís"],
-        zone_tensionada: true,
-      },
-      "Cerdanyola del Vallès": {
-        barrios: ["Bellaterra", "Centre"],
-        zone_tensionada: true,
-      },
     },
   },
   Maresme: {
-    description: "地中海黄金海岸线，气候宜人，Rodalies C1 线直通巴塞罗那海岸线。",
+    description: "地中海海岸与近郊生活板块。",
     municipios: {
-      Mataró: { barrios: ["Centre", "Cerdanyola de Mataró"], zone_tensionada: true },
-      "El Masnou": { barrios: ["Centre / Port"], zone_tensionada: true },
-      Sitges: { barrios: ["Centre Històric", "Terramar / Vinyet"], zone_tensionada: true },
+      Mataró: {
+        barrios: ["Centre", "Cerdanyola de Mataró"],
+        zone_tensionada: true,
+      },
+      "El Masnou": {
+        barrios: ["Centre / Port"],
+        zone_tensionada: true,
+      },
     },
   },
 };
 
+const panelClass =
+  "rounded-3xl border border-slate-200/80 bg-white/95 shadow-[0_18px_60px_-24px_rgba(15,23,42,0.28)] backdrop-blur";
+const inputClass =
+  "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100";
+const selectClass = `${inputClass} appearance-none pr-10`;
+const mutedLabel = "mb-2 block text-[11px] font-semibold uppercase tracking-[0.13em] text-slate-500";
+
+function formatNumber(value: unknown) {
+  const text = String(value ?? "");
+  const match = text.match(/-?\d+(?:\.\d+)?/);
+  if (!match) return text;
+  const n = Number(match[0]);
+  if (!Number.isFinite(n)) return text;
+  return n.toLocaleString("es-ES", { maximumFractionDigits: 2 });
+}
+
+function safeText(value: unknown, fallback = "暂无数据") {
+  if (value === null || value === undefined || value === "") return fallback;
+  return String(value);
+}
+
+function parseJsonError(error: unknown) {
+  return error instanceof Error ? error.message : "请求失败，请稍后重试。";
+}
+
+function statusTone(level: string | undefined) {
+  const normalized = String(level || "").toUpperCase();
+  if (normalized === "RED") return "border-rose-200 bg-rose-50 text-rose-700";
+  if (normalized === "YELLOW") return "border-amber-200 bg-amber-50 text-amber-700";
+  return "border-emerald-200 bg-emerald-50 text-emerald-700";
+}
+
+function StatusPill({ label, tone = "neutral" }: { label: string; tone?: "neutral" | "success" | "warning" | "danger" }) {
+  const styles = {
+    neutral: "border-slate-200 bg-slate-50 text-slate-600",
+    success: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    warning: "border-amber-200 bg-amber-50 text-amber-700",
+    danger: "border-rose-200 bg-rose-50 text-rose-700",
+  };
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${styles[tone]}`}>
+      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+      {label}
+    </span>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  options,
+  onChange,
+  hint,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+  hint?: string;
+}) {
+  return (
+    <div>
+      <label className={mutedLabel}>{label}</label>
+      <div className="relative">
+        <select value={value} onChange={(e) => onChange(e.target.value)} className={selectClass}>
+          {options.map((item) => (
+            <option key={item} value={item}>
+              {item}
+            </option>
+          ))}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+      </div>
+      {hint ? <p className="mt-1.5 text-[11px] text-slate-400">{hint}</p> : null}
+    </div>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  detail,
+  icon: Icon,
+  accent = "indigo",
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+  icon: React.ComponentType<{ className?: string }>;
+  accent?: "indigo" | "emerald" | "amber" | "rose" | "slate";
+}) {
+  const iconMap = {
+    indigo: "bg-indigo-50 text-indigo-600",
+    emerald: "bg-emerald-50 text-emerald-600",
+    amber: "bg-amber-50 text-amber-600",
+    rose: "bg-rose-50 text-rose-600",
+    slate: "bg-slate-100 text-slate-600",
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400">{label}</p>
+          <p className="mt-2 text-xl font-semibold tracking-tight text-slate-950">{value}</p>
+          {detail ? <p className="mt-1 text-xs leading-5 text-slate-500">{detail}</p> : null}
+        </div>
+        <div className={`rounded-xl p-2.5 ${iconMap[accent]}`}>
+          <Icon className="h-4 w-4" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ title, body, icon: Icon }: { title: string; body: string; icon: React.ComponentType<{ className?: string }> }) {
+  return (
+    <div className="flex min-h-[420px] items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-slate-50/80 px-8 text-center">
+      <div className="max-w-md">
+        <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-slate-400 shadow-sm ring-1 ring-slate-200">
+          <Icon className="h-6 w-6" />
+        </div>
+        <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
+        <p className="mt-2 text-sm leading-6 text-slate-500">{body}</p>
+      </div>
+    </div>
+  );
+}
+
+function SectionCard({ title, eyebrow, children }: { title: string; eyebrow?: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5">
+      {eyebrow ? <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-600">{eyebrow}</p> : null}
+      <h3 className="mt-1 text-base font-semibold text-slate-950">{title}</h3>
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
+
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<
-    "evaluate" | "compare" | "legal" | "concierge" | "marketplace"
-  >("evaluate");
+  const [activeTab, setActiveTab] = useState<TabKey>("evaluate");
+  const [geoTree, setGeoTree] = useState<GeoTree>(FALLBACK_TREE);
+  const [loadingGeo, setLoadingGeo] = useState(true);
+  const [geoError, setGeoError] = useState("");
 
-  // 地理三级级联树结构
-  const [geoTree, setGeoTree] = useState<Record<string, any>>(FALLBACK_TREE);
-  const [loadingGeo, setLoadingGeo] = useState<boolean>(true);
-
-  // 1. 评估表单状态
-  const [evalComarca, setEvalComarca] = useState<string>("Barcelonès");
-  const [evalMunicipio, setEvalMunicipio] = useState<string>("Barcelona");
-  const [evalBarrio, setEvalBarrio] = useState<string>("Eixample");
-  const [evalIntent, setEvalIntent] = useState<"rent" | "buy">("rent");
-  const [evalRentalType, setEvalRentalType] = useState<"entire" | "room">("entire");
-  const [evalPrice, setEvalPrice] = useState<string>("1300");
-  const [evalSqm, setEvalSqm] = useState<string>("75");
-  const [evalBedrooms, setEvalBedrooms] = useState<string>("2");
-  const [evalAddress, setEvalAddress] = useState<string>("");
-  const [evalDesc, setEvalDesc] = useState<string>("");
+  const [evalComarca, setEvalComarca] = useState("Barcelonès");
+  const [evalMunicipio, setEvalMunicipio] = useState("Barcelona");
+  const [evalBarrio, setEvalBarrio] = useState("Eixample");
+  const [evalIntent, setEvalIntent] = useState<Intent>("rent");
+  const [evalRentalType, setEvalRentalType] = useState<RentalType>("entire");
+  const [evalPrice, setEvalPrice] = useState("1300");
+  const [evalSqm, setEvalSqm] = useState("75");
+  const [evalBedrooms, setEvalBedrooms] = useState("2");
+  const [evalFloor, setEvalFloor] = useState<FloorLevel>("Middle");
+  const [evalElevator, setEvalElevator] = useState(true);
+  const [evalCondition, setEvalCondition] = useState<Condition>("good");
+  const [evalAddress, setEvalAddress] = useState("");
+  const [evalDesc, setEvalDesc] = useState("");
   const [evalResult, setEvalResult] = useState<any>(null);
-  const [evalLoading, setEvalLoading] = useState<boolean>(false);
+  const [evalLoading, setEvalLoading] = useState(false);
+  const [evalError, setEvalError] = useState("");
 
-  // 2. 区域对比表单状态
-  const [compComarcaA, setCompComarcaA] = useState<string>("Barcelonès");
-  const [compMuniA, setCompMuniA] = useState<string>("Barcelona");
-  const [compBarrioA, setCompBarrioA] = useState<string>("Eixample");
-
-  const [compComarcaB, setCompComarcaB] = useState<string>("Vallès Occidental");
-  const [compMuniB, setCompMuniB] = useState<string>("Sant Cugat del Vallès");
-  const [compBarrioB, setCompBarrioB] = useState<string>("Volpelleres");
-
-  const [compSqm, setCompSqm] = useState<string>("80");
+  const [compComarcaA, setCompComarcaA] = useState("Barcelonès");
+  const [compMuniA, setCompMuniA] = useState("Barcelona");
+  const [compBarrioA, setCompBarrioA] = useState("Eixample");
+  const [compComarcaB, setCompComarcaB] = useState("Vallès Occidental");
+  const [compMuniB, setCompMuniB] = useState("Sant Cugat del Vallès");
+  const [compBarrioB, setCompBarrioB] = useState("Volpelleres");
+  const [compSqm, setCompSqm] = useState("80");
   const [compResult, setCompResult] = useState<any>(null);
-  const [compLoading, setCompLoading] = useState<boolean>(false);
+  const [compLoading, setCompLoading] = useState(false);
+  const [compError, setCompError] = useState("");
 
-  // 3. 法律合规表单状态
-  const [legalComarca, setLegalComarca] = useState<string>("Barcelonès");
-  const [legalMuni, setLegalMuni] = useState<string>("Barcelona");
-  const [legalRent, setLegalRent] = useState<string>("1400");
-  const [legalDeposit, setLegalDeposit] = useState<string>("2800");
-  const [legalAgencyFee, setLegalAgencyFee] = useState<string>("0");
-  const [legalChargedTenant, setLegalChargedTenant] = useState<boolean>(false);
-  const [legalContractType, setLegalContractType] = useState<string>("LAU_LONG_TERM");
-  const [legalText, setLegalText] = useState<string>("");
+  const [legalComarca, setLegalComarca] = useState("Barcelonès");
+  const [legalMuni, setLegalMuni] = useState("Barcelona");
+  const [legalBarrio, setLegalBarrio] = useState("Eixample");
+  const [legalAddress, setLegalAddress] = useState("");
+  const [legalRent, setLegalRent] = useState("1400");
+  const [legalDeposit, setLegalDeposit] = useState("2800");
+  const [legalAgencyFee, setLegalAgencyFee] = useState("0");
+  const [legalChargedTenant, setLegalChargedTenant] = useState(false);
+  const [legalContractType, setLegalContractType] = useState("LAU_LONG_TERM");
+  const [legalText, setLegalText] = useState("");
   const [legalResult, setLegalResult] = useState<any>(null);
-  const [legalLoading, setLegalLoading] = useState<boolean>(false);
+  const [legalLoading, setLegalLoading] = useState(false);
+  const [legalError, setLegalError] = useState("");
 
-  // 初始化拉取全省地理数据库
-  useEffect(() => {
-    async function loadGeoTree() {
-      try {
-        const res = await fetchFromBackend("/api/geography/tree");
-        if (res && res.data) {
-          setGeoTree(res.data);
-        }
-      } catch (err) {
-        console.warn("未能连接到实时线上地理接口，已自动启用内部高精度全省地理引擎备用数据库。");
-      } finally {
-        setLoadingGeo(false);
-      }
+  const comarcaList = useMemo(() => Object.keys(geoTree), [geoTree]);
+  const evalMuniList = useMemo(() => Object.keys(geoTree[evalComarca]?.municipios ?? {}), [geoTree, evalComarca]);
+  const evalBarrioList = geoTree[evalComarca]?.municipios?.[evalMunicipio]?.barrios ?? [];
+  const compMuniListA = useMemo(() => Object.keys(geoTree[compComarcaA]?.municipios ?? {}), [geoTree, compComarcaA]);
+  const compBarrioListA = geoTree[compComarcaA]?.municipios?.[compMuniA]?.barrios ?? [];
+  const compMuniListB = useMemo(() => Object.keys(geoTree[compComarcaB]?.municipios ?? {}), [geoTree, compComarcaB]);
+  const compBarrioListB = geoTree[compComarcaB]?.municipios?.[compMuniB]?.barrios ?? [];
+  const legalMuniList = useMemo(() => Object.keys(geoTree[legalComarca]?.municipios ?? {}), [geoTree, legalComarca]);
+  const legalBarrioList = geoTree[legalComarca]?.municipios?.[legalMuni]?.barrios ?? [];
+
+  const refreshGeo = async () => {
+    setLoadingGeo(true);
+    setGeoError("");
+    try {
+      const res = await fetchFromBackend("/api/geography/tree");
+      if (res?.data) setGeoTree(res.data as GeoTree);
+    } catch (error) {
+      setGeoError(parseJsonError(error));
+    } finally {
+      setLoadingGeo(false);
     }
-    loadGeoTree();
+  };
+
+  useEffect(() => {
+    refreshGeo();
   }, []);
 
-  // 辅助级联选择器计算
-  const comarcaList = Object.keys(geoTree);
-  
-  // 评估模块级联
-  const evalMuniList = geoTree[evalComarca]?.municipios ? Object.keys(geoTree[evalComarca].municipios) : [];
-  const evalBarrioList = geoTree[evalComarca]?.municipios?.[evalMunicipio]?.barrios || [];
+  const resetDependentSelect = (nextGeo: GeoTree, comarca: string, setters: { municipio: (v: string) => void; barrio: (v: string) => void }) => {
+    const municipalities = Object.keys(nextGeo[comarca]?.municipios ?? {});
+    const nextMunicipio = municipalities[0] ?? "";
+    const nextBarrio = nextGeo[comarca]?.municipios?.[nextMunicipio]?.barrios?.[0] ?? "";
+    setters.municipio(nextMunicipio);
+    setters.barrio(nextBarrio);
+  };
 
-  // 对比模块级联 A
-  const compMuniListA = geoTree[compComarcaA]?.municipios ? Object.keys(geoTree[compComarcaA].municipios) : [];
-  const compBarrioListA = geoTree[compComarcaA]?.municipios?.[compMuniA]?.barrios || [];
+  const setEvalComarcaSafe = (value: string) => {
+    setEvalComarca(value);
+    resetDependentSelect(geoTree, value, { municipio: setEvalMunicipio, barrio: setEvalBarrio });
+  };
+  const setCompComarcaASafe = (value: string) => {
+    setCompComarcaA(value);
+    resetDependentSelect(geoTree, value, { municipio: setCompMuniA, barrio: setCompBarrioA });
+  };
+  const setCompComarcaBSafe = (value: string) => {
+    setCompComarcaB(value);
+    resetDependentSelect(geoTree, value, { municipio: setCompMuniB, barrio: setCompBarrioB });
+  };
+  const setLegalComarcaSafe = (value: string) => {
+    setLegalComarca(value);
+    resetDependentSelect(geoTree, value, { municipio: setLegalMuni, barrio: setLegalBarrio });
+  };
 
-  // 对比模块级联 B
-  const compMuniListB = geoTree[compComarcaB]?.municipios ? Object.keys(geoTree[compComarcaB].municipios) : [];
-  const compBarrioListB = geoTree[compComarcaB]?.municipios?.[compMuniB]?.barrios || [];
-
-  // 提交房产评估
-  const handleEvaluate = async (e: React.FormEvent) => {
+  const handleEvaluate = async (e: FormEvent) => {
     e.preventDefault();
     setEvalLoading(true);
     setEvalResult(null);
-
+    setEvalError("");
     try {
       const payload = {
         intent: evalIntent,
         rental_type: evalRentalType,
         comarca: evalComarca,
         municipio: evalMunicipio,
-        barrio: evalBarrio,
-        address: evalAddress,
-        price: parseFloat(evalPrice) || 0,
-        area_sqm: parseFloat(evalSqm) || 60,
-        bedrooms: parseInt(evalBedrooms) || 2,
-        description: evalDesc,
+        barrio: evalBarrio || null,
+        address: evalAddress || null,
+        price: Number(evalPrice) || 0,
+        area_sqm: Number(evalSqm) || 0,
+        bedrooms: Number(evalBedrooms) || 1,
+        floor_level: evalFloor,
+        has_elevator: evalElevator,
+        condition: evalCondition,
+        description: evalDesc || null,
       };
-
       const res = await fetchFromBackend("/api/evaluate", {
         method: "POST",
         body: JSON.stringify(payload),
       });
-
-      if (res.status === "success") {
-        setEvalResult(res.data);
-      }
-    } catch (err: any) {
-      alert("评估失败: " + err.message);
+      if (res?.status === "success") setEvalResult(res.data);
+      else throw new Error(res?.message || "评估服务未返回有效结果。 ");
+    } catch (error) {
+      setEvalError(parseJsonError(error));
     } finally {
       setEvalLoading(false);
     }
   };
 
-  // 提交区域对比
-  const handleCompare = async (e: React.FormEvent) => {
+  const handleCompare = async (e: FormEvent) => {
     e.preventDefault();
     setCompLoading(true);
     setCompResult(null);
-
+    setCompError("");
     try {
-      const payload = {
-        comarca_a: compComarcaA,
-        municipio_a: compMuniA,
-        barrio_a: compBarrioA,
-        comarca_b: compComarcaB,
-        municipio_b: compMuniB,
-        barrio_b: compBarrioB,
-        area_sqm: parseFloat(compSqm) || 80,
-      };
-
       const res = await fetchFromBackend("/api/compare-regions", {
         method: "POST",
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          comarca_a: compComarcaA,
+          municipio_a: compMuniA,
+          barrio_a: compBarrioA || null,
+          comarca_b: compComarcaB,
+          municipio_b: compMuniB,
+          barrio_b: compBarrioB || null,
+          area_sqm: Number(compSqm) || 80,
+        }),
       });
-
-      if (res.status === "success") {
-        setCompResult(res.data);
-      }
-    } catch (err: any) {
-      alert("对比计算失败: " + err.message);
+      if (res?.status === "success") setCompResult(res.data);
+      else throw new Error(res?.message || "对比服务未返回有效结果。 ");
+    } catch (error) {
+      setCompError(parseJsonError(error));
     } finally {
       setCompLoading(false);
     }
   };
 
-  // 提交法律审查
-  const handleLegalCheck = async (e: React.FormEvent) => {
+  const handleLegalCheck = async (e: FormEvent) => {
     e.preventDefault();
     setLegalLoading(true);
     setLegalResult(null);
-
+    setLegalError("");
     try {
-      const payload = {
-        comarca: legalComarca,
-        municipio: legalMuni,
-        monthly_rent: parseFloat(legalRent) || 0,
-        deposit_amount: parseFloat(legalDeposit) || 0,
-        agency_fee_amount: parseFloat(legalAgencyFee) || 0,
-        agency_fee_charged_to_tenant: legalChargedTenant,
-        contract_type: legalContractType,
-        contract_text: legalText,
-      };
-
       const res = await fetchFromBackend("/api/check-rental-risk", {
         method: "POST",
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          comarca: legalComarca,
+          municipio: legalMuni,
+          barrio: legalBarrio || null,
+          address: legalAddress || null,
+          monthly_rent: Number(legalRent) || 0,
+          deposit_amount: Number(legalDeposit) || 0,
+          agency_fee_amount: Number(legalAgencyFee) || 0,
+          agency_fee_charged_to_tenant: legalChargedTenant,
+          contract_type: legalContractType,
+          contract_text: legalText || null,
+        }),
       });
-
-      if (res.status === "success") {
-        setLegalResult(res.data);
-      }
-    } catch (err: any) {
-      alert("风控审核失败: " + err.message);
+      if (res?.status === "success") setLegalResult(res.data);
+      else throw new Error(res?.message || "风控服务未返回有效结果。 ");
+    } catch (error) {
+      setLegalError(parseJsonError(error));
     } finally {
       setLegalLoading(false);
     }
   };
 
+  const tabs: { key: TabKey; label: string; sub: string; icon: React.ComponentType<{ className?: string }> }[] = [
+    { key: "evaluate", label: "房产评估", sub: "价格 · 收益 · 风险", icon: BarChart3 },
+    { key: "compare", label: "区域对比", sub: "租金 · 资产 · 宜居", icon: TrendingUp },
+    { key: "legal", label: "租务风控", sub: "合同 · 押金 · 中介费", icon: ShieldCheck },
+    { key: "concierge", label: "专家服务", sub: "下一阶段产品", icon: Users },
+    { key: "marketplace", label: "房源匹配", sub: "下一阶段产品", icon: Target },
+  ];
+
   return (
-    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-      {/* 顶部企业头部与状态 */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b border-slate-800 pb-6 gap-4">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold mb-3">
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-            加泰罗尼亚全省 12 县 · 300+ 市镇全域智算引擎
-          </div>
-          <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight drop-shadow-md">
-            巴塞罗那房产智能评估与租务风控引擎
-          </h1>
-          <p className="text-slate-200 text-sm sm:text-base font-medium drop-shadow-md mt-2">
-            基于全域真实数据库与最新西班牙 housing law 法律模型的智能分析系统
-          </p>
-        </div>
-
-        <div className="flex flex-col items-start md:items-end gap-1.5 text-xs text-slate-400">
-          <div className="flex items-center gap-2">
-            <span className="text-slate-300">后端引擎状态:</span>
-            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono border border-emerald-500/30">
-              Render Online (v7.0)
-            </span>
-          </div>
-          <p className="font-mono text-[11px] text-slate-400">
-            Node: {BACKEND_URL.replace("https://", "")}
-          </p>
-        </div>
+    <main className="min-h-screen bg-[#f4f7fb] text-slate-950">
+      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div className="absolute left-[8%] top-[-160px] h-[440px] w-[440px] rounded-full bg-indigo-200/25 blur-3xl" />
+        <div className="absolute right-[-80px] top-[18%] h-[360px] w-[360px] rounded-full bg-cyan-200/20 blur-3xl" />
       </div>
 
-      {/* 核心功能导航 Tab */}
-      <div className="flex flex-wrap gap-2 border-b border-slate-800/80 pb-2">
-        <button
-          onClick={() => setActiveTab("evaluate")}
-          className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 ${
-            activeTab === "evaluate"
-              ? "bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/20"
-              : "bg-slate-900/80 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-800"
-          }`}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-          </svg>
-          1. 房产估值与投资精算
-        </button>
-
-        <button
-          onClick={() => setActiveTab("compare")}
-          className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 ${
-            activeTab === "compare"
-              ? "bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/20"
-              : "bg-slate-900/80 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-800"
-          }`}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-          </svg>
-          2. 全省跨区域多维对比
-        </button>
-
-        <button
-          onClick={() => setActiveTab("legal")}
-          className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 ${
-            activeTab === "legal"
-              ? "bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/20"
-              : "bg-slate-900/80 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-800"
-          }`}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
-          </svg>
-          3. 住房法合规性风控
-        </button>
-
-        {/* 预留扩展模块按钮 */}
-        <button
-          onClick={() => setActiveTab("concierge")}
-          className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 ${
-            activeTab === "concierge"
-              ? "bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/20"
-              : "bg-slate-900/80 text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-slate-800/80"
-          }`}
-        >
-          <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-500/20 text-amber-300 font-bold">预研</span>
-          私人专家/线下代查房
-        </button>
-
-        <button
-          onClick={() => setActiveTab("marketplace")}
-          className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 ${
-            activeTab === "marketplace"
-              ? "bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/20"
-              : "bg-slate-900/80 text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-slate-800/80"
-          }`}
-        >
-          <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-500/20 text-amber-300 font-bold">预研</span>
-          智选房源匹配库
-        </button>
-      </div>
-
-      {/* ============================================================================== */}
-      {/* TAB 1: 房产评估与风控精算 */}
-      {/* ============================================================================== */}
-      {activeTab === "evaluate" && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          <div className="lg:col-span-5 bg-slate-900/90 border border-slate-800/80 rounded-2xl p-6 shadow-2xl backdrop-blur-md">
-            <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-              <span className="w-1.5 h-5 bg-amber-500 rounded-full"></span>
-              输入标的房产参数
-            </h2>
-
-            <form onSubmit={handleEvaluate} className="space-y-4">
-              {/* 模式选择 */}
-              <div className="grid grid-cols-2 gap-2 p-1 bg-slate-950 rounded-lg border border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setEvalIntent("rent")}
-                  className={`py-2 text-xs font-bold rounded-md transition-all ${
-                    evalIntent === "rent" ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  租房评估 (Alquiler)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEvalIntent("buy")}
-                  className={`py-2 text-xs font-bold rounded-md transition-all ${
-                    evalIntent === "buy" ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  买房评估 (Compra)
-                </button>
+      <div className="mx-auto max-w-[1480px] px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+        <header className="mb-6 overflow-hidden rounded-[32px] border border-slate-200/90 bg-[#0b1220] text-white shadow-[0_24px_80px_-32px_rgba(15,23,42,0.55)]">
+          <div className="relative px-5 py-6 sm:px-8 lg:px-10 lg:py-8">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_15%,rgba(99,102,241,0.23),transparent_36%),radial-gradient(circle_at_12%_95%,rgba(34,211,238,0.1),transparent_30%)]" />
+            <div className="relative flex flex-col gap-7 lg:flex-row lg:items-end lg:justify-between">
+              <div className="max-w-4xl">
+                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-semibold tracking-[0.08em] text-slate-200">
+                  <Sparkles className="h-3.5 w-3.5 text-cyan-300" />
+                  BCN HOUSING INTELLIGENCE
+                </div>
+                <h1 className="max-w-3xl text-3xl font-semibold tracking-[-0.03em] sm:text-4xl lg:text-5xl">
+                  巴塞罗那房产智能决策平台
+                </h1>
+                <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
+                  把房价判断、区域比较与租务风险整合到一个清晰的决策界面。前端直接连接你的 FastAPI 房产分析后端。
+                </p>
+                <div className="mt-5 flex flex-wrap items-center gap-2">
+                  <StatusPill label={loadingGeo ? "正在同步区域数据" : "区域数据已连接"} tone={loadingGeo ? "warning" : "success"} />
+                  <StatusPill label="FastAPI" tone="neutral" />
+                  <StatusPill label="AI analysis" tone="neutral" />
+                </div>
               </div>
 
-              {evalIntent === "rent" && (
-                <div className="flex items-center gap-4 text-xs text-slate-300 pt-1">
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="rentalType"
-                      checked={evalRentalType === "entire"}
-                      onChange={() => setEvalRentalType("entire")}
-                      className="accent-amber-500"
-                    />
-                    整套租赁 (Vivienda Completa)
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="rentalType"
-                      checked={evalRentalType === "room"}
-                      onChange={() => setEvalRentalType("room")}
-                      className="accent-amber-500"
-                    />
-                    单间合租 (Habitación)
-                  </label>
+              <div className="min-w-[270px] rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400">Backend endpoint</p>
+                    <p className="mt-1 truncate text-sm font-medium text-white">{BACKEND_URL.replace("https://", "")}</p>
+                  </div>
+                  <div className="rounded-xl bg-emerald-400/10 p-2.5 text-emerald-300">
+                    <Activity className="h-4 w-4" />
+                  </div>
                 </div>
-              )}
+                <button
+                  type="button"
+                  onClick={refreshGeo}
+                  className="mt-4 inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${loadingGeo ? "animate-spin" : ""}`} />
+                  同步区域数据
+                </button>
+              </div>
+            </div>
+          </div>
+        </header>
 
-              {/* 三级级联地理选择器 */}
-              <div className="space-y-3 pt-2">
+        {geoError ? (
+          <div className="mb-5 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <Info className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <p className="font-semibold">实时区域数据暂时不可用</p>
+              <p className="mt-1 text-xs leading-5">当前页面已启用轻量演示数据，你可以继续查看界面；连接恢复后点击“同步区域数据”。</p>
+            </div>
+          </div>
+        ) : null}
+
+        <section className="mb-6 grid gap-2 rounded-2xl border border-slate-200 bg-white/90 p-2 shadow-sm md:grid-cols-5">
+          {tabs.map(({ key, label, sub, icon: Icon }) => {
+            const active = activeTab === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setActiveTab(key)}
+                className={`group flex min-h-[72px] items-center gap-3 rounded-xl px-4 py-3 text-left transition ${
+                  active ? "bg-slate-950 text-white shadow-lg" : "text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                <div className={`rounded-xl p-2.5 ${active ? "bg-white/10 text-cyan-300" : "bg-slate-100 text-slate-500 group-hover:bg-white"}`}>
+                  <Icon className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className={`text-sm font-semibold ${active ? "text-white" : "text-slate-800"}`}>{label}</p>
+                  <p className={`mt-0.5 truncate text-[11px] ${active ? "text-slate-300" : "text-slate-400"}`}>{sub}</p>
+                </div>
+              </button>
+            );
+          })}
+        </section>
+
+        {activeTab === "evaluate" ? (
+          <section className="grid gap-6 xl:grid-cols-[410px_minmax(0,1fr)]">
+            <div className={panelClass}>
+              <div className="border-b border-slate-100 px-5 py-5 sm:px-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-600">01 · Property analysis</p>
+                    <h2 className="mt-1 text-xl font-semibold tracking-tight">输入房源信息</h2>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">输入越完整，估值和风险判断越有参考价值。</p>
+                  </div>
+                  <div className="rounded-xl bg-indigo-50 p-2.5 text-indigo-600">
+                    <HomeIcon className="h-4 w-4" />
+                  </div>
+                </div>
+              </div>
+
+              <form onSubmit={handleEvaluate} className="space-y-5 p-5 sm:p-6">
+                <div className="grid grid-cols-2 rounded-xl border border-slate-200 bg-slate-50 p-1">
+                  <button type="button" onClick={() => setEvalIntent("rent")} className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition ${evalIntent === "rent" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}>
+                    租房
+                  </button>
+                  <button type="button" onClick={() => setEvalIntent("buy")} className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition ${evalIntent === "buy" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}>
+                    买房
+                  </button>
+                </div>
+
+                {evalIntent === "rent" ? (
+                  <div>
+                    <p className={mutedLabel}>租赁形式</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button type="button" onClick={() => setEvalRentalType("entire")} className={`rounded-xl border px-3 py-2.5 text-sm font-medium transition ${evalRentalType === "entire" ? "border-indigo-200 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-500"}`}>整套</button>
+                      <button type="button" onClick={() => setEvalRentalType("room")} className={`rounded-xl border px-3 py-2.5 text-sm font-medium transition ${evalRentalType === "room" ? "border-indigo-200 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-500"}`}>单间</button>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="space-y-3">
+                  <p className={mutedLabel}>位置</p>
+                  <SelectField label="Comarca · 县" value={evalComarca} options={comarcaList} onChange={setEvalComarcaSafe} />
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <SelectField
+                      label="Municipio · 市镇"
+                      value={evalMunicipio}
+                      options={evalMuniList}
+                      onChange={(value) => {
+                        setEvalMunicipio(value);
+                        setEvalBarrio(geoTree[evalComarca]?.municipios?.[value]?.barrios?.[0] ?? "");
+                      }}
+                    />
+                    <SelectField label="Barrio · 街区" value={evalBarrio} options={["", ...evalBarrioList]} onChange={setEvalBarrio} hint="可留空，使用全域模式。" />
+                  </div>
+                </div>
+
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
-                    所属县 (Comarca - 12县全覆盖)
-                  </label>
-                  <select
-                    value={evalComarca}
-                    onChange={(e) => {
-                      const c = e.target.value;
-                      setEvalComarca(c);
-                      const mList = Object.keys(geoTree[c]?.municipios || {});
-                      if (mList.length > 0) {
-                        setEvalMunicipio(mList[0]);
-                        const bList = geoTree[c]?.municipios?.[mList[0]]?.barrios || [];
-                        setEvalBarrio(bList[0] || "");
-                      }
-                    }}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-                  >
-                    {comarcaList.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
+                  <p className={mutedLabel}>核心参数</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className={mutedLabel}>{evalIntent === "rent" ? "月租 · €" : "总价 · €"}</label><input inputMode="decimal" type="number" min="0" value={evalPrice} onChange={(e) => setEvalPrice(e.target.value)} className={inputClass} required /></div>
+                    <div><label className={mutedLabel}>面积 · ㎡</label><input inputMode="decimal" type="number" min="1" value={evalSqm} onChange={(e) => setEvalSqm(e.target.value)} className={inputClass} required /></div>
+                    <div><label className={mutedLabel}>卧室</label><input type="number" min="0" value={evalBedrooms} onChange={(e) => setEvalBedrooms(e.target.value)} className={inputClass} /></div>
+                    <SelectField label="楼层" value={evalFloor} options={["Middle", "Ático", "Bajo"]} onChange={(value) => setEvalFloor(value as FloorLevel)} />
+                  </div>
+                </div>
+
+                <div>
+                  <p className={mutedLabel}>房屋状态</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      ["good", "良好"],
+                      ["renovated", "已翻新"],
+                      ["needs_renovation", "需翻修"],
+                    ].map(([value, label]) => (
+                      <button key={value} type="button" onClick={() => setEvalCondition(value as Condition)} className={`rounded-xl border px-2 py-2.5 text-xs font-medium transition ${evalCondition === value ? "border-indigo-200 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-500"}`}>{label}</button>
                     ))}
-                  </select>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setEvalElevator((v) => !v)}
+                  className={`flex w-full items-center justify-between rounded-xl border px-3.5 py-3 text-sm transition ${evalElevator ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-white text-slate-500"}`}
+                >
+                  <span className="flex items-center gap-2"><Building2 className="h-4 w-4" />有电梯</span>
+                  <span className={`flex h-5 w-5 items-center justify-center rounded-full border ${evalElevator ? "border-emerald-500 bg-emerald-500 text-white" : "border-slate-300"}`}>{evalElevator ? <Check className="h-3 w-3" /> : null}</span>
+                </button>
+
+                <div>
+                  <label className={mutedLabel}>地址 · 可选</label>
+                  <div className="relative"><MapPin className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" /><input value={evalAddress} onChange={(e) => setEvalAddress(e.target.value)} placeholder="例如 Carrer de Balmes 120" className={`${inputClass} pl-9`} /></div>
+                </div>
+                <div>
+                  <label className={mutedLabel}>补充说明</label>
+                  <textarea rows={3} value={evalDesc} onChange={(e) => setEvalDesc(e.target.value)} placeholder="阳台、采光、装修、看房备注等" className={inputClass} />
+                </div>
+
+                {evalError ? <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-xs leading-5 text-rose-700"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{evalError}</div> : null}
+
+                <button disabled={evalLoading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3.5 text-sm font-semibold text-white shadow-lg shadow-slate-950/10 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60">
+                  {evalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                  {evalLoading ? "正在分析房源" : "开始评估"}
+                </button>
+              </form>
+            </div>
+
+            <div className="space-y-6">
+              {!evalResult && !evalLoading ? (
+                <EmptyState icon={Search} title="等待房源分析" body="提交左侧房源信息后，这里会展示价格判断、位置分析、风险提示与行动建议。" />
+              ) : null}
+
+              {evalLoading ? (
+                <div className={`${panelClass} flex min-h-[420px] items-center justify-center px-8 text-center`}>
+                  <div className="max-w-md">
+                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600"><Loader2 className="h-7 w-7 animate-spin" /></div>
+                    <h3 className="mt-5 text-xl font-semibold">正在生成分析报告</h3>
+                    <p className="mt-2 text-sm leading-6 text-slate-500">前端正在等待 FastAPI 返回计算结果与 AI 分析。</p>
+                  </div>
+                </div>
+              ) : null}
+
+              {evalResult ? (
+                <div className="space-y-6">
+                  <div className={`${panelClass} overflow-hidden`}>
+                    <div className="border-b border-slate-100 bg-[linear-gradient(135deg,#ffffff_0%,#f6f8ff_100%)] p-5 sm:p-6">
+                      <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <StatusPill label={safeText(evalResult.valuation_summary?.rating, "评估完成")} tone="success" />
+                            {evalIntent === "rent" ? <StatusPill label="租赁" tone="neutral" /> : <StatusPill label="买卖" tone="neutral" />}
+                          </div>
+                          <h2 className="mt-4 text-2xl font-semibold tracking-tight">{safeText(evalResult.valuation_summary?.value_verdict, "AI 已完成初步分析")}</h2>
+                        </div>
+                        <div className="rounded-2xl bg-slate-950 px-4 py-4 text-white sm:min-w-[220px]">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Adjusted fair value</p>
+                          <p className="mt-1 text-2xl font-semibold">{safeText(evalResult.valuation_summary?.adjusted_fair_value)}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-4 sm:p-6">
+                      <MetricCard label="价格偏离" value={safeText(evalResult.valuation_summary?.variance_percentage)} icon={BarChart3} accent="indigo" />
+                      <MetricCard label="公平价值" value={safeText(evalResult.valuation_summary?.adjusted_fair_value)} icon={WalletCards} accent="emerald" />
+                      <MetricCard label="区域状态" value={evalResult.compliance_status || (evalIntent === "rent" ? "租务分析" : "资产分析")} icon={ShieldCheck} accent="amber" />
+                      <MetricCard label="位置分析" value={safeText(evalResult.geographic_and_location_analysis?.municipio_and_barrio_insight, "已生成")} icon={MapPin} accent="slate" />
+                    </div>
+                  </div>
+
+                  <SectionCard title="区域与位置" eyebrow="Location intelligence">
+                    <div className="grid gap-4 lg:grid-cols-2">
+                      <div className="rounded-2xl bg-slate-50 p-4"><p className="text-xs font-semibold text-slate-500">区域定位</p><p className="mt-2 text-sm leading-6 text-slate-700">{safeText(evalResult.geographic_and_location_analysis?.comarca_positioning)}</p></div>
+                      <div className="rounded-2xl bg-slate-50 p-4"><p className="text-xs font-semibold text-slate-500">市镇与街区</p><p className="mt-2 text-sm leading-6 text-slate-700">{safeText(evalResult.geographic_and_location_analysis?.municipio_and_barrio_insight)}</p></div>
+                    </div>
+                  </SectionCard>
+
+                  <SectionCard title="财务与风险摘要" eyebrow="Decision support">
+                    <p className="text-sm leading-7 text-slate-700">{safeText(evalResult.financial_and_yield_breakdown)}</p>
+                    {Array.isArray(evalResult.actionable_negotiation_strategy) && evalResult.actionable_negotiation_strategy.length > 0 ? (
+                      <div className="mt-5 grid gap-3 md:grid-cols-2">
+                        {evalResult.actionable_negotiation_strategy.map((item: string, index: number) => (
+                          <div key={`${item}-${index}`} className="rounded-2xl border border-slate-200 bg-white p-4"><div className="flex gap-3"><div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-xs font-bold text-indigo-600">{index + 1}</div><p className="text-sm leading-6 text-slate-700">{item}</p></div></div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </SectionCard>
+
+                  <SectionCard title="可核对的核心指标" eyebrow="Backend metrics">
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {Object.entries(evalResult.valuation_benchmark || {}).map(([key, value]) => (
+                        <div key={key} className="rounded-xl border border-slate-200 p-3"><p className="text-[10px] font-semibold uppercase tracking-[0.11em] text-slate-400">{key.replaceAll("_", " ")}</p><p className="mt-1 text-sm font-medium text-slate-800">{safeText(value)}</p></div>
+                      ))}
+                    </div>
+                  </SectionCard>
+                </div>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        {activeTab === "compare" ? (
+          <section className="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
+            <div className={panelClass}>
+              <div className="border-b border-slate-100 p-5 sm:p-6">
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-600">02 · Regional benchmark</p>
+                <h2 className="mt-1 text-xl font-semibold">对比两个区域</h2>
+                <p className="mt-1 text-xs leading-5 text-slate-500">用同一套面积基准，快速比较租金、售价、收益和宜居度。</p>
+              </div>
+              <form onSubmit={handleCompare} className="space-y-5 p-5 sm:p-6">
+                {[{name: "区域 A", comarca: compComarcaA, setComarca: setCompComarcaASafe, muni: compMuniA, setMuni: (v: string) => { setCompMuniA(v); setCompBarrioA(geoTree[compComarcaA]?.municipios?.[v]?.barrios?.[0] ?? ""); }, barrio: compBarrioA, setBarrio: setCompBarrioA, muniList: compMuniListA, barrioList: compBarrioListA}, {name: "区域 B", comarca: compComarcaB, setComarca: setCompComarcaBSafe, muni: compMuniB, setMuni: (v: string) => { setCompMuniB(v); setCompBarrioB(geoTree[compComarcaB]?.municipios?.[v]?.barrios?.[0] ?? ""); }, barrio: compBarrioB, setBarrio: setCompBarrioB, muniList: compMuniListB, barrioList: compBarrioListB}].map((item) => (
+                  <div key={item.name} className="rounded-2xl border border-slate-200 p-4">
+                    <div className="mb-4 flex items-center justify-between"><p className="text-sm font-semibold text-slate-900">{item.name}</p><span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Location</span></div>
+                    <div className="space-y-3">
+                      <SelectField label="Comarca" value={item.comarca} options={comarcaList} onChange={item.setComarca} />
+                      <SelectField label="Municipio" value={item.muni} options={item.muniList} onChange={item.setMuni} />
+                      <SelectField label="Barrio" value={item.barrio} options={["", ...item.barrioList]} onChange={item.setBarrio} />
+                    </div>
+                  </div>
+                ))}
+
+                <div><label className={mutedLabel}>统一面积 · ㎡</label><input type="number" min="1" value={compSqm} onChange={(e) => setCompSqm(e.target.value)} className={inputClass} /></div>
+                {compError ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-xs text-rose-700">{compError}</div> : null}
+                <button disabled={compLoading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3.5 text-sm font-semibold text-white disabled:opacity-60">
+                  {compLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+                  {compLoading ? "正在比较" : "生成区域对比"}
+                </button>
+              </form>
+            </div>
+
+            <div className="space-y-6">
+              {!compResult && !compLoading ? <EmptyState icon={TrendingUp} title="等待区域对比" body="选择两个区域后，系统会返回可量化的租金、售价、收益率、安全度和宜居度。" /> : null}
+              {compLoading ? <div className={`${panelClass} flex min-h-[420px] items-center justify-center`}><div className="text-center"><Loader2 className="mx-auto h-10 w-10 animate-spin text-indigo-600" /><p className="mt-4 text-sm font-semibold">正在生成区域比较</p></div></div> : null}
+              {compResult ? (
+                <div className="space-y-6">
+                  <div className={`${panelClass} p-5 sm:p-6`}>
+                    <div className="flex items-start gap-3"><div className="rounded-xl bg-indigo-50 p-2.5 text-indigo-600"><Scale className="h-4 w-4" /></div><div><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-indigo-600">Comparison verdict</p><h2 className="mt-1 text-xl font-semibold leading-7">{safeText(compResult.ai_analysis?.comparison_verdict)}</h2></div></div>
+                    <div className="mt-6 grid gap-4 lg:grid-cols-2">
+                      {[compResult.raw_metrics?.region_a, compResult.raw_metrics?.region_b].map((region: any, index: number) => (
+                        <div key={index} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                          <p className="text-xs font-semibold text-slate-500">区域 {index === 0 ? "A" : "B"}</p>
+                          <h3 className="mt-1 text-base font-semibold text-slate-950">{safeText(region?.name)}</h3>
+                          <div className="mt-4 grid grid-cols-2 gap-2">
+                            <MetricCard label="月租估算" value={safeText(region?.avg_rent_est)} icon={WalletCards} accent="indigo" />
+                            <MetricCard label="售价估算" value={safeText(region?.avg_sale_est)} icon={Building2} accent="emerald" />
+                            <MetricCard label="毛收益率" value={safeText(region?.gross_yield)} icon={TrendingUp} accent="amber" />
+                            <MetricCard label="宜居度" value={safeText(region?.livability_score)} icon={HomeIcon} accent="slate" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <SectionCard title="市场与投资分析" eyebrow="AI comparison">
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {[
+                        ["租金与成本", compResult.ai_analysis?.rental_and_cost_comparison, WalletCards],
+                        ["居住与安全", compResult.ai_analysis?.living_quality_and_safety, ShieldCheck],
+                        ["投资回报", compResult.ai_analysis?.investment_yield_perspective, TrendingUp],
+                        ["人群建议", `A：${safeText(compResult.ai_analysis?.target_persona_recommendation?.region_a_best_for)}\nB：${safeText(compResult.ai_analysis?.target_persona_recommendation?.region_b_best_for)}`, Users],
+                      ].map(([title, text, Icon]) => (
+                        <div key={String(title)} className="rounded-2xl border border-slate-200 p-4"><div className="flex items-center gap-2 text-sm font-semibold"><div className="rounded-lg bg-slate-100 p-2 text-slate-500"><Icon className="h-4 w-4" /></div>{String(title)}</div><p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-600">{String(text ?? "暂无数据")}</p></div>
+                      ))}
+                    </div>
+                  </SectionCard>
+                </div>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        {activeTab === "legal" ? (
+          <section className="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
+            <div className={panelClass}>
+              <div className="border-b border-slate-100 p-5 sm:p-6">
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-600">03 · Rental compliance</p>
+                <h2 className="mt-1 text-xl font-semibold">检查租务风险</h2>
+                <p className="mt-1 text-xs leading-5 text-slate-500">适合在签约前检查租金、押金、中介费和合同内容。</p>
+              </div>
+              <form onSubmit={handleLegalCheck} className="space-y-5 p-5 sm:p-6">
+                <div className="space-y-3">
+                  <SelectField label="Comarca" value={legalComarca} options={comarcaList} onChange={setLegalComarcaSafe} />
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <SelectField label="Municipio" value={legalMuni} options={legalMuniList} onChange={(value) => { setLegalMuni(value); setLegalBarrio(geoTree[legalComarca]?.municipios?.[value]?.barrios?.[0] ?? ""); }} />
+                    <SelectField label="Barrio" value={legalBarrio} options={["", ...legalBarrioList]} onChange={setLegalBarrio} />
+                  </div>
+                  <div><label className={mutedLabel}>地址 · 可选</label><input value={legalAddress} onChange={(e) => setLegalAddress(e.target.value)} className={inputClass} placeholder="例如 Carrer de Mallorca 140" /></div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1">
-                      所属市镇 (Municipio)
-                    </label>
-                    <select
-                      value={evalMunicipio}
-                      onChange={(e) => {
-                        const m = e.target.value;
-                        setEvalMunicipio(m);
-                        const bList = geoTree[evalComarca]?.municipios?.[m]?.barrios || [];
-                        setEvalBarrio(bList[0] || "");
-                      }}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-                    >
-                      {evalMuniList.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
+                  <div><label className={mutedLabel}>月租 · €</label><input type="number" min="0" value={legalRent} onChange={(e) => setLegalRent(e.target.value)} className={inputClass} required /></div>
+                  <div><label className={mutedLabel}>押金 · €</label><input type="number" min="0" value={legalDeposit} onChange={(e) => setLegalDeposit(e.target.value)} className={inputClass} /></div>
+                  <div><label className={mutedLabel}>中介费 · €</label><input type="number" min="0" value={legalAgencyFee} onChange={(e) => setLegalAgencyFee(e.target.value)} className={inputClass} /></div>
+                  <SelectField label="合同类型" value={legalContractType} options={["LAU_LONG_TERM", "TEMPORADA"]} onChange={setLegalContractType} />
+                </div>
+
+                <button type="button" onClick={() => setLegalChargedTenant((v) => !v)} className={`flex w-full items-center justify-between rounded-xl border px-3.5 py-3 text-sm ${legalChargedTenant ? "border-rose-200 bg-rose-50 text-rose-700" : "border-slate-200 text-slate-500"}`}>
+                  <span>租客承担中介费 / 管理费</span>
+                  {legalChargedTenant ? <XCircle className="h-5 w-5" /> : <Minus className="h-5 w-5" />}
+                </button>
+
+                <div><label className={mutedLabel}>合同或聊天记录 · 可选</label><textarea rows={7} value={legalText} onChange={(e) => setLegalText(e.target.value)} placeholder="粘贴合同条款、房东消息或中介说明……" className={inputClass} /></div>
+                {legalError ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-xs text-rose-700">{legalError}</div> : null}
+                <button disabled={legalLoading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3.5 text-sm font-semibold text-white disabled:opacity-60">
+                  {legalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileCheck2 className="h-4 w-4" />}
+                  {legalLoading ? "正在检查" : "开始风险检查"}
+                </button>
+              </form>
+            </div>
+
+            <div className="space-y-6">
+              {!legalResult && !legalLoading ? <EmptyState icon={ShieldCheck} title="等待风险检查" body="提交租务信息后，这里会显示总体风险、硬性问题、合同分析和下一步处理建议。" /> : null}
+              {legalLoading ? <div className={`${panelClass} flex min-h-[420px] items-center justify-center`}><div className="text-center"><Loader2 className="mx-auto h-10 w-10 animate-spin text-indigo-600" /><p className="mt-4 text-sm font-semibold">正在检查租务条件</p></div></div> : null}
+              {legalResult ? (
+                <div className="space-y-6">
+                  <div className={`${panelClass} p-5 sm:p-6`}>
+                    <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+                      <div className="max-w-3xl">
+                        <div className={`inline-flex rounded-full border px-3 py-1.5 text-xs font-semibold ${statusTone(legalResult.overall_risk_level)}`}>{safeText(legalResult.overall_risk_level, "UNKNOWN")}</div>
+                        <h2 className="mt-4 text-2xl font-semibold tracking-tight">{safeText(legalResult.compliance_verdict, "已完成风险检查")}</h2>
+                      </div>
+                      <div className="rounded-2xl bg-slate-50 p-4"><div className="flex items-center gap-2 text-xs font-semibold text-slate-500"><Scale className="h-4 w-4" /> 合规检查</div><p className="mt-2 text-sm text-slate-700">根据当前提交信息生成。</p></div>
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1">
-                      街区/社区 (Barrio - 选填)
-                    </label>
-                    <select
-                      value={evalBarrio}
-                      onChange={(e) => setEvalBarrio(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-                    >
-                      <option value="">全域通用模式</option>
-                      {evalBarrioList.map((b: string) => (
-                        <option key={b} value={b}>
-                          {b}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
+                  <SectionCard title="发现的问题" eyebrow="Risk findings">
+                    {Array.isArray(legalResult.hard_legal_violations) && legalResult.hard_legal_violations.length > 0 ? (
+                      <div className="space-y-3">
+                        {legalResult.hard_legal_violations.map((item: string, index: number) => (
+                          <div key={`${item}-${index}`} className="flex gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" /><p className="text-sm leading-6 text-rose-800">{item}</p></div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800"><ShieldCheck className="h-5 w-5" />当前结果未返回硬性违法项。</div>
+                    )}
+                  </SectionCard>
 
-              {/* 价格与物理参数 */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-1">
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
-                    {evalIntent === "rent" ? "申请月租 (€)" : "房屋总价 (€)"}
-                  </label>
-                  <input
-                    type="number"
-                    value={evalPrice}
-                    onChange={(e) => setEvalPrice(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-                    required
-                  />
-                </div>
+                  <SectionCard title="合同内容分析" eyebrow="Contract review"><p className="text-sm leading-7 text-slate-700">{safeText(legalResult.contract_text_analysis)}</p></SectionCard>
 
-                <div className="col-span-1">
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
-                    建筑面积 (㎡)
-                  </label>
-                  <input
-                    type="number"
-                    value={evalSqm}
-                    onChange={(e) => setEvalSqm(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-                    required
-                  />
+                  <SectionCard title="下一步处理" eyebrow="Action plan">
+                    {Array.isArray(legalResult.actionable_rights_recovery_steps) && legalResult.actionable_rights_recovery_steps.length > 0 ? (
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {legalResult.actionable_rights_recovery_steps.map((item: string, index: number) => (
+                          <div key={`${item}-${index}`} className="rounded-2xl border border-slate-200 p-4"><div className="flex gap-3"><div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-xs font-bold text-indigo-600">{index + 1}</div><p className="text-sm leading-6 text-slate-700">{item}</p></div></div>
+                        ))}
+                      </div>
+                    ) : <p className="text-sm text-slate-500">暂无行动建议。</p>}
+                  </SectionCard>
                 </div>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
 
-                <div className="col-span-1">
-                  <label className="block text-xs font-medium text-slate-300 mb-1">卧室数</label>
-                  <input
-                    type="number"
-                    value={evalBedrooms}
-                    onChange={(e) => setEvalBedrooms(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-              </div>
-
+        {activeTab === "concierge" ? (
+          <section className={`${panelClass} overflow-hidden`}>
+            <div className="grid items-center gap-8 p-6 sm:p-8 lg:grid-cols-[1.1fr_.9fr] lg:p-10">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">具体门牌地址 (选填)</label>
-                <input
-                  type="text"
-                  placeholder="如: Carrer de Balmes 120"
-                  value={evalAddress}
-                  onChange={(e) => setEvalAddress(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-                />
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-600">Next product line</p>
+                <h2 className="mt-2 text-3xl font-semibold tracking-tight">专家服务工作台</h2>
+                <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600">将房源筛选、陪看、材料核验与谈判服务接入当前分析引擎。现在先保留产品入口，不影响主流程。</p>
+                <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                  {[["看房", "线下检查清单"], ["核验", "资料与合同检查"], ["谈判", "价格策略支持"]].map(([title, body]) => <div key={title} className="rounded-2xl border border-slate-200 p-4"><p className="text-sm font-semibold">{title}</p><p className="mt-1 text-xs leading-5 text-slate-500">{body}</p></div>)}
+                </div>
               </div>
+              <div className="rounded-3xl bg-slate-950 p-6 text-white"><p className="text-[10px] uppercase tracking-[0.15em] text-slate-500">Product status</p><div className="mt-3 flex items-center gap-3"><div className="rounded-xl bg-cyan-400/10 p-3 text-cyan-300"><Users className="h-5 w-5" /></div><div><p className="font-semibold">规划中</p><p className="mt-1 text-xs text-slate-400">先验证核心分析体验，再扩展服务网络。</p></div></div></div>
+            </div>
+          </section>
+        ) : null}
 
+        {activeTab === "marketplace" ? (
+          <section className={`${panelClass} overflow-hidden`}>
+            <div className="grid items-center gap-8 p-6 sm:p-8 lg:grid-cols-[1.1fr_.9fr] lg:p-10">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">补充说明/采光/楼层等</label>
-                <textarea
-                  rows={2}
-                  placeholder="如：带阳台，3楼有电梯，已精装修..."
-                  value={evalDesc}
-                  onChange={(e) => setEvalDesc(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-                />
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-600">Next product line</p>
+                <h2 className="mt-2 text-3xl font-semibold tracking-tight">智能房源匹配库</h2>
+                <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600">未来可以把房源搜索、预算、通勤、租金上限与合规评分放进同一套排序逻辑，让用户从“分析房源”进入“发现房源”。</p>
+                <div className="mt-6 flex flex-wrap gap-2"><StatusPill label="预算" tone="neutral" /><StatusPill label="区域" tone="neutral" /><StatusPill label="收益" tone="neutral" /><StatusPill label="合规" tone="neutral" /></div>
               </div>
-
-              <button
-                type="submit"
-                disabled={evalLoading}
-                className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl transition-all shadow-lg shadow-amber-500/20 disabled:opacity-50 mt-2"
-              >
-                {evalLoading ? "正在调取加泰官方数据库计算中..." : "启动权威 AI 精算与风控评估"}
-              </button>
-            </form>
-          </div>
-
-          {/* 评估结果显示 */}
-          <div className="lg:col-span-7 space-y-6">
-            {!evalResult && !evalLoading && (
-              <div className="bg-slate-900/60 border border-dashed border-slate-800 rounded-2xl p-12 text-center text-slate-400">
-                <svg className="w-12 h-12 mx-auto mb-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <p className="text-base font-semibold text-slate-300">暂无计算报告</p>
-                <p className="text-xs text-slate-500 mt-1">请在左侧选择加泰罗尼亚省对应市镇与参数，系统将秒级生成精算结果。</p>
-              </div>
-            )}
-
-            {evalLoading && (
-              <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-12 text-center space-y-4">
-                <div className="w-10 h-10 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-                <p className="text-sm font-semibold text-slate-200">正在与加泰罗尼亚 SGM 官方模型与数据库通信...</p>
-              </div>
-            )}
-
-            {evalResult && (
-              <div className="bg-slate-900/95 border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-6 animate-fade-in">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-                  <div>
-                    <span className="text-xs font-semibold text-amber-400">评估评级结论</span>
-                    <h3 className="text-2xl font-bold text-white mt-0.5">
-                      {evalResult.valuation_summary?.rating || "评估完成"}
-                    </h3>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-xs text-slate-400">官方调和公允估值</span>
-                    <p className="text-xl font-mono font-bold text-emerald-400">
-                      {evalResult.valuation_summary?.adjusted_fair_value}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 text-sm text-slate-200 leading-relaxed">
-                  <p className="font-semibold text-amber-400 mb-1">公允度判词：</p>
-                  {evalResult.valuation_summary?.value_verdict}
-                </div>
-
-                {evalResult.geographic_and_location_analysis && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800/80">
-                      <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">
-                        县域定位 (Comarca)
-                      </h4>
-                      <p className="text-xs text-slate-300 leading-relaxed">
-                        {evalResult.geographic_and_location_analysis.comarca_positioning}
-                      </p>
-                    </div>
-
-                    <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800/80">
-                      <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">
-                        市镇与街区深度解读
-                      </h4>
-                      <p className="text-xs text-slate-300 leading-relaxed">
-                        {evalResult.geographic_and_location_analysis.municipio_and_barrio_insight}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {evalResult.financial_and_yield_breakdown && (
-                  <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800/80">
-                    <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">
-                      财务测算与法规约束明细
-                    </h4>
-                    <p className="text-xs text-slate-300 leading-relaxed">
-                      {evalResult.financial_and_yield_breakdown}
-                    </p>
-                  </div>
-                )}
-
-                {evalResult.actionable_negotiation_strategy && (
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
-                      专家级议价战术建议
-                    </h4>
-                    <ul className="space-y-2">
-                      {evalResult.actionable_negotiation_strategy.map((item: string, idx: number) => (
-                        <li key={idx} className="flex items-start gap-2 text-xs text-slate-200 bg-slate-950 p-2.5 rounded-lg border border-slate-800">
-                          <span className="text-amber-400 font-bold">•</span>
-                          {item}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================================== */}
-      {/* TAB 2: 全省跨区域多维对比 */}
-      {/* ============================================================================== */}
-      {activeTab === "compare" && (
-        <div className="space-y-8">
-          <form onSubmit={handleCompare} className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-2xl backdrop-blur-md">
-            <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-              <span className="w-1.5 h-5 bg-amber-500 rounded-full"></span>
-              选择两个拟对比的加泰区域 (Comarca / Municipio / Barrio)
-            </h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {/* 区域 A */}
-              <div className="bg-slate-950 p-5 rounded-xl border border-slate-800 space-y-3">
-                <div className="text-sm font-bold text-amber-400 border-b border-slate-800 pb-2">
-                  目标区域 A
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">所属县 (Comarca)</label>
-                  <select
-                    value={compComarcaA}
-                    onChange={(e) => {
-                      const c = e.target.value;
-                      setCompComarcaA(c);
-                      const mList = Object.keys(geoTree[c]?.municipios || {});
-                      if (mList.length > 0) {
-                        setCompMuniA(mList[0]);
-                        const bList = geoTree[c]?.municipios?.[mList[0]]?.barrios || [];
-                        setCompBarrioA(bList[0] || "");
-                      }
-                    }}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
-                  >
-                    {comarcaList.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">市镇 (Municipio)</label>
-                    <select
-                      value={compMuniA}
-                      onChange={(e) => {
-                        const m = e.target.value;
-                        setCompMuniA(m);
-                        const bList = geoTree[compComarcaA]?.municipios?.[m]?.barrios || [];
-                        setCompBarrioA(bList[0] || "");
-                      }}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
-                    >
-                      {compMuniListA.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">街区 (Barrio)</label>
-                    <select
-                      value={compBarrioA}
-                      onChange={(e) => setCompBarrioA(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
-                    >
-                      <option value="">全域模式</option>
-                      {compBarrioListA.map((b: string) => (
-                        <option key={b} value={b}>
-                          {b}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* 区域 B */}
-              <div className="bg-slate-950 p-5 rounded-xl border border-slate-800 space-y-3">
-                <div className="text-sm font-bold text-amber-400 border-b border-slate-800 pb-2">
-                  目标区域 B
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">所属县 (Comarca)</label>
-                  <select
-                    value={compComarcaB}
-                    onChange={(e) => {
-                      const c = e.target.value;
-                      setCompComarcaB(c);
-                      const mList = Object.keys(geoTree[c]?.municipios || {});
-                      if (mList.length > 0) {
-                        setCompMuniB(mList[0]);
-                        const bList = geoTree[c]?.municipios?.[mList[0]]?.barrios || [];
-                        setCompBarrioB(bList[0] || "");
-                      }
-                    }}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
-                  >
-                    {comarcaList.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">市镇 (Municipio)</label>
-                    <select
-                      value={compMuniB}
-                      onChange={(e) => {
-                        const m = e.target.value;
-                        setCompMuniB(m);
-                        const bList = geoTree[compComarcaB]?.municipios?.[m]?.barrios || [];
-                        setCompBarrioB(bList[0] || "");
-                      }}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
-                    >
-                      {compMuniListB.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">街区 (Barrio)</label>
-                    <select
-                      value={compBarrioB}
-                      onChange={(e) => setCompBarrioB(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
-                    >
-                      <option value="">全域模式</option>
-                      {compBarrioListB.map((b: string) => (
-                        <option key={b} value={b}>
-                          {b}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
+              <div className="rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-cyan-50 p-6"><div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-indigo-600 shadow-sm"><Target className="h-5 w-5" /></div><p className="mt-5 text-sm font-semibold">产品路线</p><p className="mt-2 text-xs leading-6 text-slate-600">先用现有 API 完成决策层，再接入真实房源数据源与个性化推荐。</p></div>
             </div>
+          </section>
+        ) : null}
 
-            <div className="mt-6 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-slate-400">对比基准面积 (㎡):</label>
-                <input
-                  type="number"
-                  value={compSqm}
-                  onChange={(e) => setCompSqm(e.target.value)}
-                  className="w-24 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={compLoading}
-                className="px-8 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl transition-all shadow-lg shadow-amber-500/20 disabled:opacity-50"
-              >
-                {compLoading ? "正在跨区域精算中..." : "生成多维对比矩阵"}
-              </button>
-            </div>
-          </form>
-
-          {/* 对比结果显示 */}
-          {compResult && (
-            <div className="bg-slate-900/95 border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-6">
-              <h3 className="text-xl font-bold text-white border-b border-slate-800 pb-3">
-                {compResult.ai_analysis?.comparison_verdict || "对比报告分析"}
-              </h3>
-
-              {/* 核心指标对比卡片 */}
-              {compResult.raw_metrics && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="bg-slate-950 p-5 rounded-xl border border-slate-800 space-y-3">
-                    <h4 className="text-sm font-bold text-amber-400">
-                      {compResult.raw_metrics.region_a.name}
-                    </h4>
-                    <div className="grid grid-cols-2 gap-2 text-xs text-slate-300">
-                      <div>预估均租: <span className="font-bold text-white">{compResult.raw_metrics.region_a.avg_rent_est}</span></div>
-                      <div>预估买价: <span className="font-bold text-white">{compResult.raw_metrics.region_a.avg_sale_est}</span></div>
-                      <div>毛收益率: <span className="font-bold text-emerald-400">{compResult.raw_metrics.region_a.gross_yield}</span></div>
-                      <div>治安/宜居: <span className="font-bold text-amber-300">{compResult.raw_metrics.region_a.safety_score} / {compResult.raw_metrics.region_a.livability_score}</span></div>
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-950 p-5 rounded-xl border border-slate-800 space-y-3">
-                    <h4 className="text-sm font-bold text-amber-400">
-                      {compResult.raw_metrics.region_b.name}
-                    </h4>
-                    <div className="grid grid-cols-2 gap-2 text-xs text-slate-300">
-                      <div>预估均租: <span className="font-bold text-white">{compResult.raw_metrics.region_b.avg_rent_est}</span></div>
-                      <div>预估买价: <span className="font-bold text-white">{compResult.raw_metrics.region_b.avg_sale_est}</span></div>
-                      <div>毛收益率: <span className="font-bold text-emerald-400">{compResult.raw_metrics.region_b.gross_yield}</span></div>
-                      <div>治安/宜居: <span className="font-bold text-amber-300">{compResult.raw_metrics.region_b.safety_score} / {compResult.raw_metrics.region_b.livability_score}</span></div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {compResult.ai_analysis && (
-                <div className="space-y-4 text-xs text-slate-300 leading-relaxed bg-slate-950 p-5 rounded-xl border border-slate-800">
-                  <div>
-                    <span className="font-bold text-amber-400 block mb-1">租金与购房成本门槛对比：</span>
-                    <p>{compResult.ai_analysis.rental_and_cost_comparison}</p>
-                  </div>
-                  <div>
-                    <span className="font-bold text-amber-400 block mb-1">居住品质与治安维度：</span>
-                    <p>{compResult.ai_analysis.living_quality_and_safety}</p>
-                  </div>
-                  <div>
-                    <span className="font-bold text-amber-400 block mb-1">投资回报率与增值空间：</span>
-                    <p>{compResult.ai_analysis.investment_yield_perspective}</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ============================================================================== */}
-      {/* TAB 3: 住房法合规性风控 */}
-      {/* ============================================================================== */}
-      {activeTab === "legal" && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          <div className="lg:col-span-5 bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-2xl backdrop-blur-md">
-            <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-              <span className="w-1.5 h-5 bg-amber-500 rounded-full"></span>
-              西班牙 Ley 12/2023 租赁合规审计
-            </h2>
-
-            <form onSubmit={handleLegalCheck} className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">所属县 (Comarca)</label>
-                  <select
-                    value={legalComarca}
-                    onChange={(e) => {
-                      setLegalComarca(e.target.value);
-                      const mList = Object.keys(geoTree[e.target.value]?.municipios || {});
-                      if (mList.length > 0) setLegalMuni(mList[0]);
-                    }}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
-                  >
-                    {comarcaList.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">所属市镇 (Municipio)</label>
-                  <select
-                    value={legalMuni}
-                    onChange={(e) => setLegalMuni(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
-                  >
-                    {(geoTree[legalComarca]?.municipios ? Object.keys(geoTree[legalComarca].municipios) : []).map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">月租金 (€)</label>
-                  <input
-                    type="number"
-                    value={legalRent}
-                    onChange={(e) => setLegalRent(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">押金金额 (€)</label>
-                  <input
-                    type="number"
-                    value={legalDeposit}
-                    onChange={(e) => setLegalDeposit(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">收取中介费 (€)</label>
-                  <input
-                    type="number"
-                    value={legalAgencyFee}
-                    onChange={(e) => setLegalAgencyFee(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="checkbox"
-                  id="chargedTenant"
-                  checked={legalChargedTenant}
-                  onChange={(e) => setLegalChargedTenant(e.target.checked)}
-                  className="accent-amber-500 w-4 h-4 rounded"
-                />
-                <label htmlFor="chargedTenant" className="text-xs text-slate-300 cursor-pointer">
-                  中介费/管理费由租客支付 (Honorarios cobrados al inquilino)
-                </label>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">粘贴合同关键条款/聊天记录</label>
-                <textarea
-                  rows={4}
-                  placeholder="在此粘贴中介或房东给你的合同文字、费用清单或微信/WhatsApp沟通记录..."
-                  value={legalText}
-                  onChange={(e) => setLegalText(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={legalLoading}
-                className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl transition-all shadow-lg shadow-amber-500/20 disabled:opacity-50"
-              >
-                {legalLoading ? "正在扫描法律漏洞..." : "审查违法风险与霸王条款"}
-              </button>
-            </form>
-          </div>
-
-          <div className="lg:col-span-7 space-y-6">
-            {!legalResult && (
-              <div className="bg-slate-900/60 border border-dashed border-slate-800 rounded-2xl p-12 text-center text-slate-400">
-                <p className="text-base font-semibold text-slate-300">等待提交风控数据</p>
-                <p className="text-xs text-slate-500 mt-1">系统将自动校验西班牙最新住房法 (Ley de Vivienda) 极强制限价条款。</p>
-              </div>
-            )}
-
-            {legalResult && (
-              <div className="bg-slate-900/95 border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-6">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-                  <h3 className="text-xl font-bold text-white">合规审计结论</h3>
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                    legalResult.overall_risk_level === "RED"
-                      ? "bg-rose-500/20 text-rose-400 border border-rose-500/30"
-                      : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                  }`}>
-                    风险等级: {legalResult.overall_risk_level || "RED"}
-                  </span>
-                </div>
-
-                {legalResult.hard_legal_violations && legalResult.hard_legal_violations.length > 0 && (
-                  <div className="bg-rose-950/40 border border-rose-900/60 p-4 rounded-xl space-y-2">
-                    <h4 className="text-xs font-bold text-rose-400 uppercase tracking-wider">违规硬性警报：</h4>
-                    <ul className="space-y-1">
-                      {legalResult.hard_legal_violations.map((v: string, i: number) => (
-                        <li key={i} className="text-xs text-rose-200 flex items-start gap-1.5">
-                          <span>⚠️</span>
-                          {v}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 text-xs text-slate-300 leading-relaxed">
-                  <p className="font-bold text-amber-400 mb-1">合同文本条款解读：</p>
-                  {legalResult.contract_text_analysis}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================================== */}
-      {/* 预留高阶区块 1: 私人专家/线下代查房 */}
-      {/* ============================================================================== */}
-      {activeTab === "concierge" && (
-        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-8 shadow-2xl relative overflow-hidden backdrop-blur-md">
-          {/* 未开放水印角标 */}
-          <div className="absolute top-4 right-4 px-3 py-1 bg-amber-500/20 border border-amber-500/40 rounded-full text-amber-300 text-xs font-bold">
-            企业版预研功能 · 暂未开放入口
-          </div>
-
-          <div className="max-w-2xl space-y-6">
-            <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
-            </div>
-
-            <h2 className="text-2xl font-extrabold text-white">私人专家一对一代查房与实地风控排查</h2>
-            <p className="text-sm text-slate-300 leading-relaxed">
-              针对人在国内或跨城市无法亲自到场的客户，本平台即将上线线下一对一专家代查房服务。持牌房产专家将深入加泰罗尼亚全省 12 县的任何指定门牌，进行 4K 直播验房、墙体测湿、老旧线路排查、邻里噪音实测以及房东产权真实性溯源。
-            </p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
-              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-                <div className="text-amber-400 text-xs font-bold mb-1">01. 现场实地测验</div>
-                <div className="text-xs text-slate-400">4K 视频直播 + 房屋隐蔽工程排查</div>
-              </div>
-              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-                <div className="text-amber-400 text-xs font-bold mb-1">02. 产权与债务公证</div>
-                <div className="text-xs text-slate-400">调取 Nota Simple 确认房东抵押与欠款</div>
-              </div>
-              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-                <div className="text-amber-400 text-xs font-bold mb-1">03. 帮谈租金/买价</div>
-                <div className="text-xs text-slate-400">结合平台精算底牌直接与中介/房东谈判</div>
-              </div>
-            </div>
-
-            <div className="pt-4 flex items-center gap-4">
-              <button disabled className="px-6 py-3 bg-slate-800 text-slate-500 font-bold rounded-xl text-sm border border-slate-700 cursor-not-allowed">
-                内测申请已满 (暂未开放预约)
-              </button>
-              <span className="text-xs text-slate-500">预计于 2026 年第四季度开放企业内测</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================================== */}
-      {/* 预留高阶区块 2: 智选精配房源库 */}
-      {/* ============================================================================== */}
-      {activeTab === "marketplace" && (
-        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-8 shadow-2xl relative overflow-hidden backdrop-blur-md">
-          <div className="absolute top-4 right-4 px-3 py-1 bg-amber-500/20 border border-amber-500/40 rounded-full text-amber-300 text-xs font-bold">
-            企业版预研功能 · 数据接入中
-          </div>
-
-          <div className="max-w-2xl space-y-6">
-            <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-7h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-              </svg>
-            </div>
-
-            <h2 className="text-2xl font-extrabold text-white">加泰全域高性价比且无法律风险的“智选房源匹配库”</h2>
-            <p className="text-sm text-slate-300 leading-relaxed">
-              基于我们自主研发的 AI 算力引擎，系统正在实时抓取理想（Idealista）、Fotocasa 及银行法拍房（Servihabitat等）全网房源。系统将自动过滤违法收取中介费、租金严重溢价或产权存在纠纷的劣质房源，只为你呈现性价比最高、收益率最稳固的优质资产。
-            </p>
-
-            <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
-              <div className="text-xs font-bold text-amber-400">系统数据接入进度：</div>
-              <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                <div className="bg-amber-500 h-full w-3/4 animate-pulse"></div>
-              </div>
-              <div className="flex justify-between text-[11px] text-slate-500">
-                <span>已抓取分析 12,400+ 套房源数据</span>
-                <span>核心 API 对接完成 75%</span>
-              </div>
-            </div>
-
-            <div className="pt-2 flex items-center gap-4">
-              <button disabled className="px-6 py-3 bg-slate-800 text-slate-500 font-bold rounded-xl text-sm border border-slate-700 cursor-not-allowed">
-                功能开发中
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+        <footer className="mt-8 flex flex-col gap-3 border-t border-slate-200/80 pt-5 text-[11px] text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+          <p>BCN Housing Intelligence · Frontend built with Next.js + React + TypeScript</p>
+          <div className="flex items-center gap-3"><span className="inline-flex items-center gap-1.5"><CircleHelp className="h-3.5 w-3.5" />结果用于辅助决策，不替代律师或注册估价师的正式意见。</span><span>© 2026</span></div>
+        </footer>
+      </div>
+    </main>
   );
 }
