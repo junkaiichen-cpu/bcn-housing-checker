@@ -11,7 +11,7 @@ import {
   ChevronDown,
   CircleHelp,
   FileCheck2,
-  Home,
+  Home as HomeIcon,  
   Info,
   Landmark,
   Loader2,
@@ -529,7 +529,7 @@ export default function Home() {
                     <p className="mt-1 text-xs leading-5 text-slate-500">输入越完整，估值和风险判断越有参考价值。</p>
                   </div>
                   <div className="rounded-xl bg-indigo-50 p-2.5 text-indigo-600">
-                    <Home className="h-4 w-4" />
+                    <Homeicon className="h-4 w-4" />
                   </div>
                 </div>
               </div>
@@ -739,7 +739,7 @@ export default function Home() {
                             <MetricCard label="月租估算" value={safeText(region?.avg_rent_est)} icon={WalletCards} accent="indigo" />
                             <MetricCard label="售价估算" value={safeText(region?.avg_sale_est)} icon={Building2} accent="emerald" />
                             <MetricCard label="毛收益率" value={safeText(region?.gross_yield)} icon={TrendingUp} accent="amber" />
-                            <MetricCard label="宜居度" value={safeText(region?.livability_score)} icon={Home} accent="slate" />
+                            <MetricCard label="宜居度" value={safeText(region?.livability_score)} icon={HomeIcon} accent="slate" />
                           </div>
                         </div>
                       ))}
