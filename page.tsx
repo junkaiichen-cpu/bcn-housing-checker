@@ -529,7 +529,7 @@ export default function Home() {
                     <p className="mt-1 text-xs leading-5 text-slate-500">输入越完整，估值和风险判断越有参考价值。</p>
                   </div>
                   <div className="rounded-xl bg-indigo-50 p-2.5 text-indigo-600">
-                    <Homeicon className="h-4 w-4" />
+                    <HomeIcon className="h-4 w-4" />
                   </div>
                 </div>
               </div>
