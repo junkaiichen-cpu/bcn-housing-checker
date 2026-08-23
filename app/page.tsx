@@ -452,7 +452,7 @@ export default function Home() {
                   巴塞罗那房产智能决策平台
                 </h1>
                 <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
-                  把房价判断、区域比较与租务风险整合到一个清晰的决策界面。前端直接连接你的 FastAPI 房产分析后端。
+                  JK的大房子！你值得信赖的房子！。
                 </p>
                 <div className="mt-5 flex flex-wrap items-center gap-2">
                   <StatusPill label={loadingGeo ? "正在同步区域数据" : "区域数据已连接"} tone={loadingGeo ? "warning" : "success"} />
