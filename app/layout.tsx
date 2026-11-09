@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Link from "next/link";
 import "./globals.css";
 import ContractLabelFix from "./ContractLabelFix";
 
@@ -14,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Jk大房子（房产评估与租务风控系统）",
-  description: "Barcelona Real Estate Intelligence & Risk Engine",
+  title: "BCN Housing | Barcelona Real Estate",
+  description: "Property insights and home search for Barcelona.",
   icons: {
     icon: [{ url: "/avatar.png?v=2" }, { url: "/favicon.ico?v=2" }],
     apple: "/avatar.png?v=2",
@@ -29,10 +30,29 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <div className="fixed inset-0 -z-10 bg-cover bg-center bg-no-repeat transition-all" style={{ backgroundImage: `url('/back.png')` }}>
           <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-[3px]"></div>
         </div>
-        <main className="relative z-10 flex-1 flex flex-col">
+        <div className="relative z-10 flex-1 flex flex-col">
+          <nav className="mx-auto flex w-full max-w-[1480px] items-center justify-between gap-4 px-4 py-3 text-white sm:px-6 lg:px-8">
+            <Link href="/" className="text-sm font-bold tracking-[0.12em]">
+              BCN HOUSING
+            </Link>
+            <div className="flex items-center gap-2 text-xs font-semibold sm:gap-3 sm:text-sm">
+              <Link
+                href="/customer"
+                className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 transition hover:bg-white/10"
+              >
+                房源搜索 · Buscar
+              </Link>
+              <Link
+                href="/admin"
+                className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 transition hover:bg-white/10"
+              >
+                Admin
+              </Link>
+            </div>
+          </nav>
           {children}
           <ContractLabelFix />
-        </main>
+        </div>
       </body>
     </html>
   );

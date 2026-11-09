@@ -1,10 +1,11 @@
 "use client";
 
 import React, { FormEvent, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
-  Activity, AlertTriangle, ArrowRight, BarChart3, Building2, Check, ChevronDown,
+  AlertTriangle, ArrowRight, BarChart3, Building2, Check, ChevronDown,
   CircleHelp, FileCheck2, Home as HomeIcon, Info, Loader2, MapPin, Minus,
-  RefreshCw, Scale, Search, ShieldCheck, Sparkles, Target, TrendingUp,
+  RefreshCw, Search, ShieldCheck, Sparkles, Target, TrendingUp,
   Users, WalletCards, XCircle,
 } from "lucide-react";
 import { BACKEND_URL, fetchFromBackend } from "@/lib/api";
@@ -15,6 +16,62 @@ type RentalType = "entire" | "studio" | "private_room" | "shared_room";
 type Condition = "good" | "renovated" | "needs_renovation";
 type FloorLevel = "Middle" | "Ático" | "Bajo";
 type PriceMode = "monthly" | "total";
+type DataRecord = Record<string, unknown>;
+
+interface LegacyResponse<T> {
+  status: string;
+  data: T;
+  message?: string;
+}
+
+interface EvaluationResult extends DataRecord {
+  valuation_summary?: {
+    rating?: unknown;
+    adjusted_fair_value?: unknown;
+    variance_percentage?: unknown;
+    value_verdict?: unknown;
+  };
+  valuation_benchmark?: Record<string, unknown>;
+  geographic_and_location_analysis?: {
+    comarca_positioning?: unknown;
+    municipio_and_barrio_insight?: unknown;
+    [key: string]: unknown;
+  };
+  actionable_negotiation_strategy?: string[];
+  financial_and_yield_breakdown?: unknown;
+  compliance_status?: unknown;
+  __input?: {
+    monthlyPrice: number;
+    userEnteredPrice: boolean;
+    priceMode: PriceMode;
+    termMonths: number;
+  };
+}
+
+interface ComparisonResult extends DataRecord {
+  raw_metrics?: {
+    region_a?: DataRecord;
+    region_b?: DataRecord;
+  };
+  ai_analysis?: {
+    comparison_verdict?: unknown;
+    rental_and_cost_comparison?: unknown;
+    living_quality_and_safety?: unknown;
+    investment_yield_perspective?: unknown;
+    target_persona_recommendation?: {
+      region_a_best_for?: unknown;
+      region_b_best_for?: unknown;
+    };
+  };
+}
+
+interface LegalRiskResult extends DataRecord {
+  overall_risk_level?: string;
+  compliance_verdict?: unknown;
+  hard_legal_violations?: string[];
+  contract_text_analysis?: unknown;
+  actionable_rights_recovery_steps?: string[];
+}
 
 interface MunicipalityNode { barrios: string[]; zone_tensionada?: boolean; avg_rent_sqm?: number; avg_sale_sqm?: number; }
 interface GeoNode { description?: string; municipios: Record<string, MunicipalityNode>; }
@@ -98,7 +155,7 @@ export default function Home() {
   const [evalCondition, setEvalCondition] = useState<Condition>("good");
   const [evalAddress, setEvalAddress] = useState("");
   const [evalDesc, setEvalDesc] = useState("");
-  const [evalResult, setEvalResult] = useState<any>(null);
+  const [evalResult, setEvalResult] = useState<EvaluationResult | null>(null);
   const [evalLoading, setEvalLoading] = useState(false);
   const [evalError, setEvalError] = useState("");
   const [priceWasProvided, setPriceWasProvided] = useState(false);
@@ -110,7 +167,7 @@ export default function Home() {
   const [compMuniB, setCompMuniB] = useState("Sant Cugat del Vallès");
   const [compBarrioB, setCompBarrioB] = useState("Volpelleres");
   const [compSqm, setCompSqm] = useState("80");
-  const [compResult, setCompResult] = useState<any>(null);
+  const [compResult, setCompResult] = useState<ComparisonResult | null>(null);
   const [compLoading, setCompLoading] = useState(false);
   const [compError, setCompError] = useState("");
 
@@ -123,7 +180,7 @@ export default function Home() {
   const [legalChargedTenant, setLegalChargedTenant] = useState(false);
   const [legalContractType, setLegalContractType] = useState("LAU_LONG_TERM");
   const [legalText, setLegalText] = useState("");
-  const [legalResult, setLegalResult] = useState<any>(null);
+  const [legalResult, setLegalResult] = useState<LegalRiskResult | null>(null);
   const [legalLoading, setLegalLoading] = useState(false);
   const [legalError, setLegalError] = useState("");
 
@@ -137,8 +194,8 @@ export default function Home() {
   const legalMuniList = useMemo(() => Object.keys(geoTree[legalComarca]?.municipios ?? {}), [geoTree, legalComarca]);
   const legalBarrioList = geoTree[legalComarca]?.municipios?.[legalMuni]?.barrios ?? [];
 
-  const refreshGeo = async () => { setLoadingGeo(true); setGeoError(""); try { const res = await fetchFromBackend("/api/geography/tree"); if (res?.data) setGeoTree(res.data as GeoTree); } catch (e) { setGeoError(parseJsonError(e)); } finally { setLoadingGeo(false); } };
-  useEffect(() => { refreshGeo(); }, []);
+  const refreshGeo = async () => { setLoadingGeo(true); setGeoError(""); try { const res = await fetchFromBackend<{ data: GeoTree }>("/api/geography/tree"); if (res?.data) setGeoTree(res.data); } catch (e) { setGeoError(parseJsonError(e)); } finally { setLoadingGeo(false); } };
+  useEffect(() => { queueMicrotask(() => { void refreshGeo(); }); }, []);
 
   const resetLocation = (tree: GeoTree, comarca: string, setMuni: (v: string) => void, setBarrio: (v: string) => void) => {
     const municipalities = Object.keys(tree[comarca]?.municipios ?? {}); const muni = municipalities[0] ?? ""; const barrio = tree[comarca]?.municipios?.[muni]?.barrios?.[0] ?? ""; setMuni(muni); setBarrio(barrio);
@@ -166,7 +223,7 @@ export default function Home() {
         price: monthlyPrice, area_sqm: Number(evalSqm) || null, bedrooms: Number(evalBedrooms) || 1,
         floor_level: evalFloor, has_elevator: evalElevator, condition: evalCondition, description: evalDesc || null,
       };
-      const res = await fetchFromBackend("/api/evaluate", { method: "POST", body: JSON.stringify(payload) });
+      const res = await fetchFromBackend<LegacyResponse<EvaluationResult>>("/api/evaluate", { method: "POST", body: JSON.stringify(payload) });
       if (res?.status === "success") setEvalResult({ ...res.data, __input: { monthlyPrice, userEnteredPrice, priceMode: evalPriceMode, termMonths: Number(evalTermMonths) || 12 } });
       else throw new Error(res?.message || "评估服务未返回有效结果。");
     } catch (e) { setEvalError(parseJsonError(e)); } finally { setEvalLoading(false); }
@@ -174,13 +231,13 @@ export default function Home() {
 
   const handleCompare = async (e: FormEvent) => {
     e.preventDefault(); setCompLoading(true); setCompResult(null); setCompError("");
-    try { const res = await fetchFromBackend("/api/compare-regions", { method: "POST", body: JSON.stringify({ comarca_a: compComarcaA, municipio_a: compMuniA, barrio_a: compBarrioA || null, comarca_b: compComarcaB, municipio_b: compMuniB, barrio_b: compBarrioB || null, area_sqm: Number(compSqm) || 80 }) }); if (res?.status === "success") setCompResult(res.data); else throw new Error(res?.message || "对比服务未返回有效结果。"); }
+    try { const res = await fetchFromBackend<LegacyResponse<ComparisonResult>>("/api/compare-regions", { method: "POST", body: JSON.stringify({ comarca_a: compComarcaA, municipio_a: compMuniA, barrio_a: compBarrioA || null, comarca_b: compComarcaB, municipio_b: compMuniB, barrio_b: compBarrioB || null, area_sqm: Number(compSqm) || 80 }) }); if (res?.status === "success") setCompResult(res.data); else throw new Error(res?.message || "对比服务未返回有效结果。"); }
     catch (e) { setCompError(parseJsonError(e)); } finally { setCompLoading(false); }
   };
 
   const handleLegalCheck = async (e: FormEvent) => {
     e.preventDefault(); setLegalLoading(true); setLegalResult(null); setLegalError("");
-    try { const res = await fetchFromBackend("/api/check-rental-risk", { method: "POST", body: JSON.stringify({ comarca: legalComarca, municipio: legalMuni, barrio: legalBarrio || null, monthly_rent: Number(legalRent) || 0, deposit_amount: Number(legalDeposit) || 0, agency_fee_amount: Number(legalAgencyFee) || 0, agency_fee_charged_to_tenant: legalChargedTenant, contract_type: legalContractType, contract_text: legalText || null }) }); if (res?.status === "success") setLegalResult(res.data); else throw new Error(res?.message || "风控服务未返回有效结果。"); }
+    try { const res = await fetchFromBackend<LegacyResponse<LegalRiskResult>>("/api/check-rental-risk", { method: "POST", body: JSON.stringify({ comarca: legalComarca, municipio: legalMuni, barrio: legalBarrio || null, monthly_rent: Number(legalRent) || 0, deposit_amount: Number(legalDeposit) || 0, agency_fee_amount: Number(legalAgencyFee) || 0, agency_fee_charged_to_tenant: legalChargedTenant, contract_type: legalContractType, contract_text: legalText || null }) }); if (res?.status === "success") setLegalResult(res.data); else throw new Error(res?.message || "风控服务未返回有效结果。"); }
     catch (e) { setLegalError(parseJsonError(e)); } finally { setLegalLoading(false); }
   };
 
@@ -196,7 +253,12 @@ export default function Home() {
     const raw = evalResult?.valuation_benchmark;
     const fallback = evalResult?.__input;
     const metrics: Record<string, { label: string; value: string }> = {};
-    if (raw && typeof raw === "object") Object.entries(raw).forEach(([k, v]: [string, any]) => { metrics[k] = typeof v === "object" && v?.label ? v : { label: k.replaceAll("_", " "), value: safeText(v) }; });
+    if (raw && typeof raw === "object") Object.entries(raw).forEach(([k, v]) => {
+      const metric = v && typeof v === "object" ? v as Record<string, unknown> : null;
+      metrics[k] = metric && metric.label
+        ? { label: String(metric.label), value: safeText(metric.value) }
+        : { label: k.replaceAll("_", " "), value: safeText(v) };
+    });
     const price = fallback?.monthlyPrice;
     if (!metrics.estimated_rent && price) metrics.estimated_rent = { label: "当前计算基准", value: `€${Math.round(price).toLocaleString("es-ES")} / 月` };
     if (!metrics.area) metrics.area = { label: "面积", value: `${Number(evalSqm) || 0} m²` };
@@ -208,6 +270,7 @@ export default function Home() {
     return Object.entries(metrics).map(([key, item]) => <div key={key} className="rounded-xl border border-slate-200 bg-white p-3"><p className="text-[10px] font-semibold tracking-[0.08em] text-slate-400">{item.label}</p><p className="mt-1 text-sm font-medium text-slate-800">{safeText(item.value)}</p></div>);
   };
 
+  /* eslint-disable @typescript-eslint/no-explicit-any */
   return <main className="min-h-screen bg-[#f4f7fb] text-slate-950"><div className="mx-auto max-w-[1480px] px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
     <header className="mb-6 overflow-hidden rounded-[32px] bg-[#0b1220] text-white shadow-[0_24px_80px_-32px_rgba(15,23,42,0.55)]"><div className="relative px-5 py-6 sm:px-8 lg:px-10 lg:py-8"><div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_15%,rgba(99,102,241,0.23),transparent_36%),radial-gradient(circle_at_12%_95%,rgba(34,211,238,0.1),transparent_30%)]" /><div className="relative flex flex-col gap-7 lg:flex-row lg:items-end lg:justify-between"><div className="max-w-4xl"><div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-semibold tracking-[0.08em] text-slate-200"><Sparkles className="h-3.5 w-3.5 text-cyan-300" />BCN HOUSING INTELLIGENCE</div><h1 className="text-3xl font-semibold tracking-[-0.03em] sm:text-4xl lg:text-5xl">巴塞罗那房产智能决策平台</h1><p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">先预测，再核价；从租金合理性一路检查到合同与风险。</p><div className="mt-5 flex flex-wrap gap-2"><StatusPill label={loadingGeo ? "正在同步区域数据" : "区域数据已连接"} tone={loadingGeo ? "warning" : "success"} /><StatusPill label="FastAPI" /><StatusPill label="AI analysis" /></div></div><div className="min-w-[270px] rounded-2xl border border-white/10 bg-white/[0.06] p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400">Backend endpoint</p><p className="mt-1 truncate text-sm font-medium">{BACKEND_URL.replace("https://", "")}</p><button type="button" onClick={refreshGeo} className="mt-4 inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-200"><RefreshCw className={`h-3.5 w-3.5 ${loadingGeo ? "animate-spin" : ""}`} />同步区域数据</button></div></div></div></header>
     {geoError && <div className="mb-5 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"><Info className="mt-0.5 h-4 w-4" /><div><b>实时区域数据暂时不可用</b><p className="mt-1 text-xs">当前使用轻量兜底数据，连接恢复后可重新同步。</p></div></div>}
@@ -225,7 +288,7 @@ export default function Home() {
     </form></div>
     <div className="space-y-6">{!evalResult && !evalLoading && <EmptyState icon={Search} title="等待房源分析" body="填写房屋基本信息即可开始。价格不是必填项。" />}{evalLoading && <div className={`${panelClass} flex min-h-[420px] items-center justify-center text-center`}><div><Loader2 className="mx-auto h-10 w-10 animate-spin text-indigo-600" /><p className="mt-4 text-sm font-semibold">正在生成预测与风险分析</p></div></div>}{evalResult && <div className="space-y-6">
       <div className={`${panelClass} overflow-hidden`}><div className="border-b border-slate-100 bg-[linear-gradient(135deg,#ffffff_0%,#f6f8ff_100%)] p-5 sm:p-6"><div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><div className="flex flex-wrap gap-2"><StatusPill label={safeText(evalResult.valuation_summary?.rating, "评估完成")} tone="success" />{priceWasProvided ? <StatusPill label="已完成报价比对" tone="success" /> : <StatusPill label="自动预测模式" tone="warning" />}</div><h2 className="mt-4 text-2xl font-semibold tracking-tight">{safeText(evalResult.valuation_summary?.value_verdict, "已完成房源分析")}</h2></div><div className="rounded-2xl bg-slate-950 px-4 py-4 text-white sm:min-w-[230px]"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">预测 / 公平价值</p><p className="mt-1 text-2xl font-semibold">{safeText(evalResult.valuation_summary?.adjusted_fair_value)}</p></div></div></div>
-        {priceWasProvided && <div className="grid gap-3 p-5 sm:grid-cols-3 sm:p-6"><MetricCard label="你的月度报价" value={`€${Math.round(evalResult.__input.monthlyPrice).toLocaleString("es-ES")}`} icon={WalletCards} accent="indigo" /><MetricCard label="与公平价值偏差" value={safeText(evalResult.valuation_summary?.variance_percentage)} icon={BarChart3} accent="amber" /><MetricCard label="区域状态" value={safeText(evalResult.compliance_status, "已分析")} icon={ShieldCheck} accent="emerald" /></div>}
+        {priceWasProvided && <div className="grid gap-3 p-5 sm:grid-cols-3 sm:p-6"><MetricCard label="你的月度报价" value={`€${Math.round(evalResult.__input?.monthlyPrice ?? 0).toLocaleString("es-ES")}`} icon={WalletCards} accent="indigo" /><MetricCard label="与公平价值偏差" value={safeText(evalResult.valuation_summary?.variance_percentage)} icon={BarChart3} accent="amber" /><MetricCard label="区域状态" value={safeText(evalResult.compliance_status, "已分析")} icon={ShieldCheck} accent="emerald" /></div>}
         {!priceWasProvided && <div className="border-t border-slate-100 bg-indigo-50/50 px-5 py-4 text-sm text-indigo-900 sm:px-6"><b>没有填写报价。</b> 上面的公平价值来自当前房源参数和区域基准；你拿到房东报价后，可以直接回来填写进行比价。</div>}</div>
       <SectionCard title="可核对的核心指标" eyebrow="Core benchmark"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{renderBenchmark()}</div></SectionCard>
       <SectionCard title="区域与位置" eyebrow="Location intelligence"><div className="grid gap-4 lg:grid-cols-2"><div className="rounded-2xl bg-slate-50 p-4"><p className="text-xs font-semibold text-slate-500">区域定位</p><p className="mt-2 text-sm leading-6 text-slate-700">{safeText(evalResult.geographic_and_location_analysis?.comarca_positioning)}</p></div><div className="rounded-2xl bg-slate-50 p-4"><p className="text-xs font-semibold text-slate-500">市镇与街区</p><p className="mt-2 text-sm leading-6 text-slate-700">{safeText(evalResult.geographic_and_location_analysis?.municipio_and_barrio_insight)}</p></div></div></SectionCard>
@@ -237,8 +300,9 @@ export default function Home() {
 
     {activeTab === "legal" && <section className="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]"><div className={panelClass}><div className="border-b border-slate-100 p-5"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-600">03 · Rental compliance</p><h2 className="mt-1 text-xl font-semibold">租务风险检查</h2></div><form onSubmit={handleLegalCheck} className="space-y-5 p-5"><SelectField label="县" value={legalComarca} options={comarcaList} onChange={v => { setLegalComarca(v); resetLocation(geoTree, v, setLegalMuni, setLegalBarrio); }} /><div className="grid grid-cols-2 gap-3"><SelectField label="市镇" value={legalMuni} options={legalMuniList} onChange={v => { setLegalMuni(v); setLegalBarrio(geoTree[legalComarca]?.municipios?.[v]?.barrios?.[0] ?? ""); }} /><SelectField label="街区" value={legalBarrio} options={["", ...legalBarrioList]} onChange={setLegalBarrio} /></div><div className="grid grid-cols-2 gap-3"><div><label className={mutedLabel}>月租 · €</label><input type="number" min="0" value={legalRent} onChange={e => setLegalRent(e.target.value)} className={inputClass} required /></div><div><label className={mutedLabel}>押金 · €</label><input type="number" min="0" value={legalDeposit} onChange={e => setLegalDeposit(e.target.value)} className={inputClass} /></div><div><label className={mutedLabel}>中介费 · €</label><input type="number" min="0" value={legalAgencyFee} onChange={e => setLegalAgencyFee(e.target.value)} className={inputClass} /></div><SelectField label="合同类型" value={legalContractType} options={Object.keys(CONTRACT_LABELS)} onChange={setLegalContractType} /></div><p className="-mt-2 text-[11px] text-slate-400">当前选择：{CONTRACT_LABELS[legalContractType]}</p><button type="button" onClick={() => setLegalChargedTenant(v => !v)} className={`flex w-full items-center justify-between rounded-xl border px-3.5 py-3 text-sm ${legalChargedTenant ? "border-rose-200 bg-rose-50 text-rose-700" : "border-slate-200 text-slate-500"}`}><span>租客承担中介费 / 管理费</span>{legalChargedTenant ? <XCircle className="h-5 w-5" /> : <Minus className="h-5 w-5" />}</button><textarea rows={7} value={legalText} onChange={e => setLegalText(e.target.value)} placeholder="合同条款、房东消息或中介说明……" className={inputClass} />{legalError && <p className="rounded-xl bg-rose-50 p-3 text-xs text-rose-700">{legalError}</p>}<button disabled={legalLoading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3.5 text-sm font-semibold text-white">{legalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileCheck2 className="h-4 w-4" />}开始风险检查</button></form></div><div>{!legalResult && !legalLoading ? <EmptyState icon={ShieldCheck} title="等待风险检查" body="检查租金、押金、中介费及合同内容。" /> : null}{legalLoading && <div className={`${panelClass} flex min-h-[420px] items-center justify-center`}><Loader2 className="h-10 w-10 animate-spin text-indigo-600" /></div>}{legalResult && <div className="space-y-6"><SectionCard title="总体风险" eyebrow="Risk level"><span className={`inline-flex rounded-full border px-3 py-1.5 text-xs font-semibold ${statusTone(legalResult.overall_risk_level)}`}>{safeText(legalResult.overall_risk_level, "UNKNOWN")}</span><h2 className="mt-4 text-xl font-semibold">{safeText(legalResult.compliance_verdict, "已完成风险检查")}</h2></SectionCard><SectionCard title="发现的问题"><div className="space-y-3">{Array.isArray(legalResult.hard_legal_violations) && legalResult.hard_legal_violations.length ? legalResult.hard_legal_violations.map((x: string, i: number) => <div key={i} className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm leading-6 text-rose-800">{x}</div>) : <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">当前结果未返回硬性违法项。</div>}</div></SectionCard><SectionCard title="合同内容分析"><p className="text-sm leading-7 text-slate-700">{safeText(legalResult.contract_text_analysis)}</p></SectionCard></div>}</div></section>}
 
-    {(activeTab === "concierge" || activeTab === "marketplace") && <section className={`${panelClass} p-8 lg:p-12`}><div className="max-w-3xl"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-600">Next product line</p><h2 className="mt-2 text-3xl font-semibold">{activeTab === "concierge" ? "专家服务工作台" : "智能房源匹配库"}</h2><p className="mt-4 text-sm leading-7 text-slate-600">{activeTab === "concierge" ? "下一阶段接入看房清单、资料核验和议价服务。" : "下一阶段把预算、区域、通勤、租金与合规评分整合进房源排序。"}</p><div className="mt-6 flex flex-wrap gap-2"><StatusPill label="预算" /><StatusPill label="区域" /><StatusPill label="收益" /><StatusPill label="合规" /></div></div></section>}
+    {(activeTab === "concierge" || activeTab === "marketplace") && <section className={`${panelClass} p-8 lg:p-12`}><div className="max-w-3xl"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-600">{activeTab === "concierge" ? "CUSTOMER SERVICE" : "PROPERTY MATCHING"}</p><h2 className="mt-2 text-3xl font-semibold">{activeTab === "concierge" ? "找房需求与看房申请" : "根据真实房源进行匹配"}</h2><p className="mt-4 text-sm leading-7 text-slate-600">{activeTab === "concierge" ? "提交买房或租房需求，查看后端返回的匹配房源，并申请看房。" : "浏览后端当前可用房源。提交需求后会显示匹配分数、说明和演示房源标识。"}</p><Link href="/customer" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700">{activeTab === "concierge" ? "开始提交找房需求" : "浏览房源并查找匹配"}<ArrowRight className="h-4 w-4" /></Link></div></section>}
 
     <footer className="mt-8 flex flex-col gap-3 border-t border-slate-200/80 pt-5 text-[11px] text-slate-400 sm:flex-row sm:items-center sm:justify-between"><p>BCN Housing Intelligence · Next.js + React + TypeScript</p><span className="inline-flex items-center gap-1.5"><CircleHelp className="h-3.5 w-3.5" />结果用于辅助决策，不替代律师或注册估价师的正式意见。</span></footer>
   </div></main>;
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 }
