@@ -24,8 +24,8 @@ import {
   Property,
   ViewingRequest,
 } from "@/lib/api";
+import { useLanguage, type Language } from "../language";
 
-type Language = "zh" | "es";
 type DashboardTab = "leads" | "matches" | "agents" | "properties" | "viewings";
 
 const labels = {
@@ -33,6 +33,29 @@ const labels = {
     title: "管理员工作台",
     subtitle: "客户线索、房源匹配与看房请求",
     language: "语言",
+    buy: "买房",
+    rent: "租房",
+    apartment: "公寓",
+    house: "独栋 / 联排",
+    room: "房间",
+    other: "其他",
+    chinese: "中文",
+    spanish: "西班牙语",
+    leadStatusValues: {
+      NEW: "新线索",
+      REVIEWING: "正在跟进",
+      MATCHED: "已匹配",
+      CONTACTED: "已联系",
+      VIEWING_SCHEDULED: "已安排看房",
+      CONVERTED: "已转化",
+      CLOSED: "已关闭",
+    },
+    viewingStatusValues: {
+      NEW: "新请求",
+      SCHEDULED: "已安排",
+      COMPLETED: "已完成",
+      CANCELLED: "已取消",
+    },
     username: "管理员账号",
     password: "密码",
     login: "登录",
@@ -109,6 +132,29 @@ const labels = {
     title: "Panel de administración",
     subtitle: "Clientes, coincidencias y solicitudes de visita",
     language: "Idioma",
+    buy: "Compra",
+    rent: "Alquiler",
+    apartment: "Piso",
+    house: "Casa",
+    room: "Habitación",
+    other: "Otro",
+    chinese: "Chino",
+    spanish: "Español",
+    leadStatusValues: {
+      NEW: "Nuevo",
+      REVIEWING: "En revisión",
+      MATCHED: "Con coincidencias",
+      CONTACTED: "Contactado",
+      VIEWING_SCHEDULED: "Visita programada",
+      CONVERTED: "Convertido",
+      CLOSED: "Cerrado",
+    },
+    viewingStatusValues: {
+      NEW: "Nueva",
+      SCHEDULED: "Programada",
+      COMPLETED: "Completada",
+      CANCELLED: "Cancelada",
+    },
     username: "Usuario administrador",
     password: "Contraseña",
     login: "Iniciar sesión",
@@ -280,8 +326,22 @@ function PropertyMatchList({
 }
 
 export default function AdminPage() {
-  const [language, setLanguage] = useState<Language>("zh");
+  const { language } = useLanguage();
   const t = labels[language];
+  const transactionLabel = (type: "BUY" | "RENT") =>
+    type === "BUY" ? t.buy : t.rent;
+  const propertyTypeLabel = (type: string | null) => {
+    if (type === "apartment") return t.apartment;
+    if (type === "house") return t.house;
+    if (type === "room") return t.room;
+    if (type === "other") return t.other;
+    return type || "—";
+  };
+  const preferredLanguageLabel = (preferredLanguage: string) => {
+    if (preferredLanguage === "zh") return t.chinese;
+    if (preferredLanguage === "es") return t.spanish;
+    return preferredLanguage;
+  };
   const [authChecked, setAuthChecked] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [username, setUsername] = useState("");
@@ -456,22 +516,6 @@ export default function AdminPage() {
             <ArrowLeft className="h-4 w-4" />
             {t.back}
           </Link>
-          <label className="text-xs font-semibold text-slate-500">
-            {t.language}
-            <select
-              value={language}
-              onChange={(event) => {
-                const nextLanguage = event.target.value as Language;
-                setLanguage(nextLanguage);
-                document.documentElement.lang =
-                  nextLanguage === "zh" ? "zh" : "es";
-              }}
-              className="ml-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm"
-            >
-              <option value="zh">中文</option>
-              <option value="es">Español</option>
-            </select>
-          </label>
         </div>
         <header className="mb-6 flex flex-col gap-5 rounded-[28px] bg-[#0b1220] p-6 text-white shadow-xl sm:flex-row sm:items-end sm:justify-between sm:p-8">
           <div>
@@ -606,7 +650,7 @@ export default function AdminPage() {
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                           <div>
                             <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-600">
-                              {lead.requirement.transaction_type} ·{" "}
+                              {transactionLabel(lead.requirement.transaction_type)} ·{" "}
                               {lead.id.slice(0, 8)}
                             </p>
                             <h2 className="mt-1 text-lg font-semibold">
@@ -633,7 +677,7 @@ export default function AdminPage() {
                             >
                               {leadStatuses.map((status) => (
                                 <option key={status} value={status}>
-                                  {status}
+                                  {t.leadStatusValues[status]}
                                 </option>
                               ))}
                             </select>
@@ -647,14 +691,14 @@ export default function AdminPage() {
                           </div>
                         </div>
                         <div className="mt-4 grid gap-3 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
-                          <DataPoint label={t.type} value={lead.requirement.transaction_type} />
+                          <DataPoint label={t.type} value={transactionLabel(lead.requirement.transaction_type)} />
                           <DataPoint label={t.budget} value={formatBudget(lead)} />
                           <DataPoint label={t.locations} value={lead.requirement.preferred_locations.join(", ") || "—"} />
-                          <DataPoint label={t.propertyType} value={lead.requirement.property_type || "—"} />
+                          <DataPoint label={t.propertyType} value={propertyTypeLabel(lead.requirement.property_type)} />
                           <DataPoint label={t.bedrooms} value={lead.requirement.bedrooms_min ?? "—"} />
                           <DataPoint label={t.area} value={lead.requirement.area_min_sqm ? `${lead.requirement.area_min_sqm} m²` : "—"} />
                           <DataPoint label={t.timeline} value={lead.requirement.timeline || "—"} />
-                          <DataPoint label={t.languageValue} value={lead.requirement.preferred_language} />
+                          <DataPoint label={t.languageValue} value={preferredLanguageLabel(lead.requirement.preferred_language)} />
                           <DataPoint label={t.created} value={formatTime(lead.created_at)} />
                           {lead.requirement.additional_requirements && (
                             <div className="sm:col-span-2 lg:col-span-3">
@@ -820,7 +864,7 @@ export default function AdminPage() {
                             </span>
                           </div>
                           <p className="mt-1 text-xs text-slate-500">
-                            {property.transaction_type} · {property.location}
+                            {transactionLabel(property.transaction_type)} · {property.location}
                             {property.neighborhood
                               ? ` · ${property.neighborhood}`
                               : ""}
@@ -949,7 +993,7 @@ function ViewingCard({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-600">
-            {t.requestStatus}: {viewing.status}
+            {t.requestStatus}: {t.viewingStatusValues[viewing.status]}
           </p>
           <h2 className="mt-1 font-semibold text-slate-900">
             {viewing.property.title}
@@ -977,13 +1021,7 @@ function ViewingCard({
           >
             {viewingStatuses.map((value) => (
               <option key={value} value={value}>
-                {value === "SCHEDULED"
-                  ? t.scheduled
-                  : value === "COMPLETED"
-                    ? t.completed
-                    : value === "CANCELLED"
-                      ? t.cancelled
-                      : value}
+                {t.viewingStatusValues[value]}
               </option>
             ))}
           </select>

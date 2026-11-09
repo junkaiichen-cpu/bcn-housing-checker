@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowLeft,
@@ -21,8 +21,7 @@ import {
   RequirementResponse,
   publicApi,
 } from "@/lib/api";
-
-type Language = "zh" | "es";
+import { useLanguage, type Language } from "../language";
 type TransactionType = "BUY" | "RENT";
 
 const copy = {
@@ -34,6 +33,7 @@ const copy = {
     language: "界面语言",
     buy: "买房",
     rent: "租房",
+    transactionType: "交易类型",
     requirements: "你的房屋需求",
     locations: "目标区域",
     locationsHint: "可填写城市、区或街区，多个地点用逗号分隔",
@@ -84,6 +84,7 @@ const copy = {
     bedroomsLabel: "卧室",
     area: "面积",
     emptyContact: "请填写邮箱或电话号码。",
+    budgetOrder: "最低预算不能高于最高预算。",
     genericError: "提交失败，请检查信息后重试。",
     notGuarantee: "匹配结果由后端规则计算；房源情况和分数不构成可租售或成交保证。",
     contactPrivacy: "联系信息仅用于处理需求；公共房源与匹配响应不会返回你的联系方式。",
@@ -97,6 +98,7 @@ const copy = {
     language: "Idioma",
     buy: "Comprar",
     rent: "Alquilar",
+    transactionType: "Tipo de operación",
     requirements: "Qué vivienda buscas",
     locations: "Zonas preferidas",
     locationsHint: "Ciudad, distrito o barrio; separa varias zonas con comas",
@@ -147,6 +149,7 @@ const copy = {
     bedroomsLabel: "dormitorios",
     area: "Superficie",
     emptyContact: "Indica un correo electrónico o un teléfono.",
+    budgetOrder: "El presupuesto mínimo no puede superar el máximo.",
     genericError: "No se pudo enviar. Revisa los datos e inténtalo de nuevo.",
     notGuarantee: "Las coincidencias se calculan con reglas del backend. La disponibilidad y puntuación no garantizan una operación.",
     contactPrivacy: "Los datos de contacto solo se usan para atender tu solicitud y no se muestran en las respuestas públicas.",
@@ -265,8 +268,9 @@ function ViewingButton({
 }
 
 export default function CustomerPage() {
-  const [language, setLanguage] = useState<Language>("zh");
+  const { language } = useLanguage();
   const t = copy[language];
+  const propertyErrorMessage = useRef(t.propertyError);
   const [transactionType, setTransactionType] = useState<TransactionType>("RENT");
   const [properties, setProperties] = useState<Property[]>([]);
   const [propertiesLoading, setPropertiesLoading] = useState(true);
@@ -298,6 +302,22 @@ export default function CustomerPage() {
   const [viewingError, setViewingError] = useState("");
 
   useEffect(() => {
+    propertyErrorMessage.current = t.propertyError;
+  }, [t.propertyError]);
+
+  useEffect(() => {
+    const requestedTransaction = new URLSearchParams(window.location.search).get(
+      "transaction",
+    );
+    if (requestedTransaction === "BUY" || requestedTransaction === "RENT") {
+      const timer = window.setTimeout(() => {
+        setTransactionType(requestedTransaction);
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+  }, []);
+
+  useEffect(() => {
     let active = true;
     publicApi
       .listProperties(transactionType)
@@ -305,7 +325,9 @@ export default function CustomerPage() {
         if (active) setProperties(response.properties);
       })
       .catch((error: unknown) => {
-        if (active) setPropertiesError(errorText(error, t.propertyError));
+        if (active) {
+          setPropertiesError(errorText(error, propertyErrorMessage.current));
+        }
       })
       .finally(() => {
         if (active) setPropertiesLoading(false);
@@ -313,7 +335,7 @@ export default function CustomerPage() {
     return () => {
       active = false;
     };
-  }, [transactionType, t.propertyError]);
+  }, [transactionType]);
 
   const submitRequirement = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -333,11 +355,7 @@ export default function CustomerPage() {
       budgetMax &&
       Number(budgetMin) > Number(budgetMax)
     ) {
-      setFormError(
-        language === "zh"
-          ? "最低预算不能高于最高预算。"
-          : "El presupuesto mínimo no puede superar el máximo.",
-      );
+      setFormError(t.budgetOrder);
       return;
     }
 
@@ -499,22 +517,6 @@ export default function CustomerPage() {
               </h1>
               <p className="mt-3 text-sm leading-6 text-slate-300">{t.intro}</p>
             </div>
-            <label className="text-xs font-semibold text-slate-300">
-              {t.language}
-              <select
-                value={language}
-                onChange={(event) => {
-                  const nextLanguage = event.target.value as Language;
-                  setLanguage(nextLanguage);
-                  document.documentElement.lang =
-                    nextLanguage === "zh" ? "zh" : "es";
-                }}
-                className="mt-1.5 block rounded-xl border border-white/15 bg-slate-900 px-3 py-2.5 text-sm text-white"
-              >
-                <option value="zh">中文</option>
-                <option value="es">Español</option>
-              </select>
-            </label>
           </div>
         </header>
 
@@ -532,7 +534,7 @@ export default function CustomerPage() {
             >
               <div
                 className="grid grid-cols-2 rounded-xl border border-slate-200 bg-slate-50 p-1"
-                aria-label={language === "zh" ? "交易类型" : "Tipo de operación"}
+                aria-label={t.transactionType}
               >
                 {(["BUY", "RENT"] as const).map((intent) => (
                   <button
@@ -556,7 +558,7 @@ export default function CustomerPage() {
                   value={locations}
                   maxLength={3219}
                   onChange={(event) => setLocations(event.target.value)}
-                  placeholder={language === "zh" ? "Barcelona, Eixample" : "Barcelona, Eixample"}
+                  placeholder="Barcelona, Eixample"
                 />
                 <span className="mt-1 block font-normal text-slate-400">
                   {t.locationsHint}

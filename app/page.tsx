@@ -5,10 +5,17 @@ import Link from "next/link";
 import {
   AlertTriangle, ArrowRight, BarChart3, Building2, Check, ChevronDown,
   CircleHelp, FileCheck2, Home as HomeIcon, Info, Loader2, MapPin, Minus,
-  RefreshCw, Search, ShieldCheck, Sparkles, Target, TrendingUp,
+  RefreshCw, Search, ShieldCheck, Target, TrendingUp,
   Users, WalletCards, XCircle,
 } from "lucide-react";
-import { BACKEND_URL, fetchFromBackend } from "@/lib/api";
+import { fetchFromBackend } from "@/lib/api";
+import HomeLanding from "./HomeLanding";
+import {
+  HomeToolTranslation,
+  homeToolText,
+  localizeHomeOption,
+  useLanguage,
+} from "./language";
 
 type TabKey = "evaluate" | "compare" | "legal" | "concierge" | "marketplace";
 type Intent = "rent" | "buy";
@@ -121,7 +128,8 @@ function StatusPill({ label, tone = "neutral" }: { label: string; tone?: "neutra
   return <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${styles[tone]}`}><span className="h-1.5 w-1.5 rounded-full bg-current" />{label}</span>;
 }
 function SelectField({ label, value, options, onChange, hint }: { label: string; value: string; options: string[]; onChange: (v: string) => void; hint?: string }) {
-  return <div><label className={mutedLabel}>{label}</label><div className="relative"><select value={value} onChange={e => onChange(e.target.value)} className={selectClass}>{options.map(o => <option key={o} value={o}>{o || "不指定"}</option>)}</select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /></div>{hint && <p className="mt-1.5 text-[11px] text-slate-400">{hint}</p>}</div>;
+  const { language } = useLanguage();
+  return <div><label className={mutedLabel}>{label}</label><div className="relative"><select value={value} onChange={e => onChange(e.target.value)} className={selectClass}>{options.map(o => <option key={o} value={o}>{localizeHomeOption(o, language)}</option>)}</select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /></div>{hint && <p className="mt-1.5 text-[11px] text-slate-400">{hint}</p>}</div>;
 }
 function MetricCard({ label, value, detail, icon: Icon, accent = "indigo" }: { label: string; value: string; detail?: string; icon: React.ComponentType<{ className?: string }>; accent?: "indigo" | "emerald" | "amber" | "rose" | "slate" }) {
   const iconMap = { indigo: "bg-indigo-50 text-indigo-600", emerald: "bg-emerald-50 text-emerald-600", amber: "bg-amber-50 text-amber-600", rose: "bg-rose-50 text-rose-600", slate: "bg-slate-100 text-slate-600" };
@@ -135,10 +143,27 @@ function SectionCard({ title, eyebrow, children }: { title: string; eyebrow?: st
 }
 
 export default function Home() {
+  const { language } = useLanguage();
   const [activeTab, setActiveTab] = useState<TabKey>("evaluate");
   const [geoTree, setGeoTree] = useState<GeoTree>(FALLBACK_TREE);
   const [loadingGeo, setLoadingGeo] = useState(true);
   const [geoError, setGeoError] = useState("");
+
+  useEffect(() => {
+    const selectToolFromHash = () => {
+      const requestedTab = window.location.hash.slice("#tool-".length);
+      if (
+        ["evaluate", "compare", "legal", "concierge", "marketplace"].includes(
+          requestedTab,
+        )
+      ) {
+        setActiveTab(requestedTab as TabKey);
+      }
+    };
+    selectToolFromHash();
+    window.addEventListener("hashchange", selectToolFromHash);
+    return () => window.removeEventListener("hashchange", selectToolFromHash);
+  }, []);
 
   const [evalComarca, setEvalComarca] = useState("Barcelonès");
   const [evalMunicipio, setEvalMunicipio] = useState("Barcelona");
@@ -260,7 +285,7 @@ export default function Home() {
         : { label: k.replaceAll("_", " "), value: safeText(v) };
     });
     const price = fallback?.monthlyPrice;
-    if (!metrics.estimated_rent && price) metrics.estimated_rent = { label: "当前计算基准", value: `€${Math.round(price).toLocaleString("es-ES")} / 月` };
+    if (!metrics.estimated_rent && price) metrics.estimated_rent = { label: "当前计算基准", value: `€${Math.round(price).toLocaleString("es-ES")}${homeToolText(" / 月", language)}` };
     if (!metrics.area) metrics.area = { label: "面积", value: `${Number(evalSqm) || 0} m²` };
     if (!metrics.location) metrics.location = { label: "区域", value: `${evalMunicipio} · ${evalBarrio || "全域"}` };
     if (!metrics.property_type) metrics.property_type = { label: "房源类型", value: RENTAL_OPTIONS.find(x => x.value === evalRentalType)?.label || "房源" };
@@ -271,10 +296,35 @@ export default function Home() {
   };
 
   /* eslint-disable @typescript-eslint/no-explicit-any */
-  return <main className="min-h-screen bg-[#f4f7fb] text-slate-950"><div className="mx-auto max-w-[1480px] px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
-    <header className="mb-6 overflow-hidden rounded-[32px] bg-[#0b1220] text-white shadow-[0_24px_80px_-32px_rgba(15,23,42,0.55)]"><div className="relative px-5 py-6 sm:px-8 lg:px-10 lg:py-8"><div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_15%,rgba(99,102,241,0.23),transparent_36%),radial-gradient(circle_at_12%_95%,rgba(34,211,238,0.1),transparent_30%)]" /><div className="relative flex flex-col gap-7 lg:flex-row lg:items-end lg:justify-between"><div className="max-w-4xl"><div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-semibold tracking-[0.08em] text-slate-200"><Sparkles className="h-3.5 w-3.5 text-cyan-300" />BCN HOUSING INTELLIGENCE</div><h1 className="text-3xl font-semibold tracking-[-0.03em] sm:text-4xl lg:text-5xl">巴塞罗那房产智能决策平台</h1><p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">先预测，再核价；从租金合理性一路检查到合同与风险。</p><div className="mt-5 flex flex-wrap gap-2"><StatusPill label={loadingGeo ? "正在同步区域数据" : "区域数据已连接"} tone={loadingGeo ? "warning" : "success"} /><StatusPill label="FastAPI" /><StatusPill label="AI analysis" /></div></div><div className="min-w-[270px] rounded-2xl border border-white/10 bg-white/[0.06] p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400">Backend endpoint</p><p className="mt-1 truncate text-sm font-medium">{BACKEND_URL.replace("https://", "")}</p><button type="button" onClick={refreshGeo} className="mt-4 inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-200"><RefreshCw className={`h-3.5 w-3.5 ${loadingGeo ? "animate-spin" : ""}`} />同步区域数据</button></div></div></div></header>
+  return <>
+    <HomeLanding onSelectTool={setActiveTab} />
+    <main id="platform-tools" className="min-h-screen scroll-mt-24 bg-[#f4f7fb] text-slate-950">
+      <div className="mx-auto max-w-[1480px] px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+        <HomeToolTranslation>
+          <div>
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <StatusPill
+        label={
+          loadingGeo
+            ? "正在同步区域数据"
+            : geoError
+              ? "实时区域数据暂时不可用"
+              : "区域数据已连接"
+        }
+        tone={loadingGeo ? "warning" : geoError ? "danger" : "success"}
+      />
+      <button
+        type="button"
+        onClick={() => void refreshGeo()}
+        disabled={loadingGeo}
+        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-[#b08d57] hover:text-[#14283b] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b08d57] disabled:cursor-wait disabled:opacity-60"
+      >
+        <RefreshCw className={`h-3.5 w-3.5 ${loadingGeo ? "animate-spin" : ""}`} />
+        同步区域数据
+      </button>
+    </div>
     {geoError && <div className="mb-5 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"><Info className="mt-0.5 h-4 w-4" /><div><b>实时区域数据暂时不可用</b><p className="mt-1 text-xs">当前使用轻量兜底数据，连接恢复后可重新同步。</p></div></div>}
-    <section className="mb-6 grid gap-2 rounded-2xl border border-slate-200 bg-white/90 p-2 shadow-sm md:grid-cols-5">{tabs.map(({ key, label, sub, icon: Icon }) => <button key={key} type="button" onClick={() => setActiveTab(key)} className={`group flex min-h-[72px] items-center gap-3 rounded-xl px-4 py-3 text-left transition ${activeTab === key ? "bg-slate-950 text-white shadow-lg" : "text-slate-600 hover:bg-slate-50"}`}><div className={`rounded-xl p-2.5 ${activeTab === key ? "bg-white/10 text-cyan-300" : "bg-slate-100 text-slate-500"}`}><Icon className="h-4 w-4" /></div><div><p className="text-sm font-semibold">{label}</p><p className={`mt-0.5 text-[11px] ${activeTab === key ? "text-slate-300" : "text-slate-400"}`}>{sub}</p></div></button>)}</section>
+    <section id="platform-tool-tabs" className="mb-6 grid scroll-mt-24 gap-2 rounded-2xl border border-slate-200 bg-white/90 p-2 shadow-sm md:grid-cols-5">{tabs.map(({ key, label, sub, icon: Icon }) => <button id={`tool-${key}`} key={key} type="button" onClick={() => setActiveTab(key)} className={`group flex min-h-[72px] items-center gap-3 rounded-xl px-4 py-3 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b08d57] ${activeTab === key ? "bg-slate-950 text-white shadow-lg" : "text-slate-600 hover:bg-slate-50"}`}><div className={`rounded-xl p-2.5 ${activeTab === key ? "bg-white/10 text-cyan-300" : "bg-slate-100 text-slate-500"}`}><Icon className="h-4 w-4" /></div><div><p className="text-sm font-semibold">{label}</p><p className={`mt-0.5 text-[11px] ${activeTab === key ? "text-slate-300" : "text-slate-400"}`}>{sub}</p></div></button>)}</section>
 
     {activeTab === "evaluate" && <section className="grid gap-6 xl:grid-cols-[410px_minmax(0,1fr)]"><div className={panelClass}><div className="border-b border-slate-100 p-5 sm:p-6"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-600">01 · Property analysis</p><h2 className="mt-1 text-xl font-semibold">输入房源信息</h2><p className="mt-1 text-xs leading-5 text-slate-500">价格可以不填。系统会先预测合理租金；填写后再与你的报价进行比对。</p></div><form onSubmit={handleEvaluate} className="space-y-5 p-5 sm:p-6">
       <div className="grid grid-cols-2 rounded-xl border border-slate-200 bg-slate-50 p-1"><button type="button" onClick={() => setEvalIntent("rent")} className={`rounded-lg px-3 py-2.5 text-sm font-semibold ${evalIntent === "rent" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}>租房</button><button type="button" onClick={() => setEvalIntent("buy")} className={`rounded-lg px-3 py-2.5 text-sm font-semibold ${evalIntent === "buy" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}>买房</button></div>
@@ -303,6 +353,10 @@ export default function Home() {
     {(activeTab === "concierge" || activeTab === "marketplace") && <section className={`${panelClass} p-8 lg:p-12`}><div className="max-w-3xl"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-600">{activeTab === "concierge" ? "CUSTOMER SERVICE" : "PROPERTY MATCHING"}</p><h2 className="mt-2 text-3xl font-semibold">{activeTab === "concierge" ? "找房需求与看房申请" : "根据真实房源进行匹配"}</h2><p className="mt-4 text-sm leading-7 text-slate-600">{activeTab === "concierge" ? "提交买房或租房需求，查看后端返回的匹配房源，并申请看房。" : "浏览后端当前可用房源。提交需求后会显示匹配分数、说明和演示房源标识。"}</p><Link href="/customer" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700">{activeTab === "concierge" ? "开始提交找房需求" : "浏览房源并查找匹配"}<ArrowRight className="h-4 w-4" /></Link></div></section>}
 
     <footer className="mt-8 flex flex-col gap-3 border-t border-slate-200/80 pt-5 text-[11px] text-slate-400 sm:flex-row sm:items-center sm:justify-between"><p>BCN Housing Intelligence · Next.js + React + TypeScript</p><span className="inline-flex items-center gap-1.5"><CircleHelp className="h-3.5 w-3.5" />结果用于辅助决策，不替代律师或注册估价师的正式意见。</span></footer>
-  </div></main>;
+          </div>
+        </HomeToolTranslation>
+      </div>
+    </main>
+  </>;
   /* eslint-enable @typescript-eslint/no-explicit-any */
 }
